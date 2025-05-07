@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Visualisasi Graf Resep Little Alchemy</title>
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style type="text/css">
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        #graph-container {
+            width: 100%;
+            height: 100vh;
+            border: 1px solid #ddd;
+            box-sizing: border-box;
+        }
+        #loading-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.5em;
+            color: #555;
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 20px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="graph-container"></div>
+<div id="loading-message">Memuat graf, harap tunggu...</div>
+
+<script type="text/javascript">
+    document.addEventListener('DOMContentLoaded', function () {
+        var container = document.getElementById('graph-container');
+        var loadingMessage = document.getElementById('loading-message');
+        var network;
+
+        var options = {
+            nodes: {
+                shape: 'box',
+                margin: 10,
+                font: {
+                    size: 14,
+                    face: 'Arial',
+                    color: '#333333'
+                },
+                borderWidth: 1,
+                scaling: {
+                    label: {
+                        enabled: true,
+                        min: 14,
+                        max: 20
+                    }
+                },
+                shadow: false
+            },
+            edges: {
+                arrows: {
+                    to: { enabled: true, scaleFactor: 0.6, type: 'arrow' }
+                },
+                color: {
+                    color: '#cccccc',
+                    highlight: '#b0b0b0',
+                    hover: '#b0b0b0',
+                    opacity: 0.8
+                },
+                smooth: {
+                    enabled: true,
+                    type: "continuous",
+                    roundness: 0.1
+                },
+                width: 0.5
+            },
+            groups: {
+                baseElement: {
+                    color: { background: '#cceeff', border: '#0077cc' },
+                    shape: 'ellipse',
+                    font: { size: 16, color: '#004c8c' }
+                },
+                derivedElement: {
+                    color: { background: '#dcedc8', border: '#387002' }
+                }
+            },
+            physics: {
+                enabled: true,
+                solver: 'barnesHut',
+                barnesHut: {
+                    gravitationalConstant: -20000,
+                    centralGravity: 0.05,
+                    springLength: 150,
+                    springConstant: 0.02,
+                    damping: 0.15,
+                    avoidOverlap: 0.2
+                },
+                stabilization: {
+                    enabled: true,
+                    iterations: 1000,
+                    updateInterval: 25,
+                    onlyDynamicEdges: false,
+                    fit: true
+                }
+            },
+            interaction: {
+                hover: true,
+                dragNodes: true,
+                dragView: true,
+                zoomView: true,
+                tooltipDelay: 200
+            },
+        };
+
+        fetch('/graph-data')
+            .then(response => {
+                if (!response.ok) { throw new Error('Gagal mengambil data graf: ' + response.statusText); }
+                return response.json();
+            })
+            .then(data => {
+                if (!data.nodes || !data.edges) { throw new Error('Format data graf tidak sesuai.'); }
+                
+                loadingMessage.innerText = "Membangun graf...";
+                var visData = {
+                    nodes: new vis.DataSet(data.nodes),
+                    edges: new vis.DataSet(data.edges)
+                };
+                network = new vis.Network(container, visData, options);
+
+                network.on("stabilizationProgress", function(params) {
+                    var maxWidth = 499;
+                    var minWidth = 20;
+                    var widthFactor = params.iterations/params.total;
+                    var width = Math.max(minWidth,maxWidth * widthFactor);
+                    loadingMessage.innerHTML = "Menstabilkan: " + Math.round(widthFactor*100) + "%";
+                });
+
+                network.once("stabilizationIterationsDone", function() {
+                    loadingMessage.innerHTML = "Layout stabil. Siap digunakan!";
+                    network.setOptions({ physics: false });
+                    network.fit();
+                     setTimeout(function() { loadingMessage.style.display = 'none'; }, 2000);
+                });
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                loadingMessage.innerText = 'Gagal memuat graf: ' + error.message;
+                loadingMessage.style.color = 'red';
+            });
+    });
+</script>
+
+</body>
+</html>
