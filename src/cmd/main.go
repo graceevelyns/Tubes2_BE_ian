@@ -1,38 +1,121 @@
-// src/cmd/main.go
 package main
 
 import (
-	"fmt"
-	"log"
-	"net/http" // package untuk fungsionalitas HTTP
+	"encoding/json" // untuk ubah data Go ke JSON
+	"fmt"           // cetak output ke konsol
+	"log"           // cetak log ke konsol
+	"net/http"      // untuk membuat server web
+	"os"            // untuk membaca file HTML dari disk
 
-	// "github.com/graceevelyns/Tubes2_BE_ian/internal/api" // kalo sudah punya router
+	"github.com/graceevelyns/Tubes2_BE_ian/src/internal/model"
+	"github.com/graceevelyns/Tubes2_BE_ian/src/internal/scraper"
+)
+
+// var global untuk menyimpan data hasil scraping biar bisa diakses oleh HTTP handler
+var (
+	globalAllNodes     map[string]*model.RecipeNode
+	globalBaseElements []*model.RecipeNode
 )
 
 func main() {
-	fmt.Println("Memulai Backend Server Little Alchemy 2 Solver...")
+	log.SetFlags(log.LstdFlags | log.Lshortfile) // tambahkan info tgl waktu dan file
+	log.Println("Memulai aplikasi visualisasi scraper...")
 
-	// router := api.NewRouter() // kalo menggunakan router kustom dari package api
-
-	// for now ini handler default atau handler sederhana
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "Selamat datang di Backend Little Alchemy 2 Solver!")
-	})
-
-	// port didefinisikan dan server mulai mendengarkan:
-	port := ":8080" // angka port diawali dengan titik dua ":"
-	                // server akan mendengarkan di semua antarmuka jaringan yang tersedia
-	                // pada mesin ini di port 8080.
-
-	fmt.Printf("Server akan berjalan di alamat http://localhost%s\n", port)
-
-	// http.ListenAndServe memulai server HTTP dengan alamat dan handler yang diberikan.
-	// parameter kedua adalah handler; 'nil' berarti menggunakan DefaultServeMux dari package http,
-	// yang akan menggunakan handler yang telah kita daftarkan dengan http.HandleFunc.
-	// kalo router kustom (seperti router dari package api), masukkin di sini.
-	// contoh: log.Fatal(http.ListenAndServe(port, router))
-	err := http.ListenAndServe(port, nil)
+	var err error
+	globalAllNodes, globalBaseElements, err = scraper.FetchAndParseData()
 	if err != nil {
-		log.Fatalf("Gagal memulai server: %s\n", err)
+		log.Fatalf("Error saat scraping data: %v", err)
+	}
+
+	if len(globalAllNodes) == 0 {
+		log.Fatalf("Scraping tidak menghasilkan data node. Pastikan scraper berfungsi dengan benar!!!")
+	}
+	log.Printf("Scraping awal berhasil. Total node unik: %d, Elemen Dasar: %d\n", len(globalAllNodes), len(globalBaseElements))
+
+	// setup server HTTP
+	http.HandleFunc("/", serveVisualizerPage)
+	http.HandleFunc("/graph-data", serveGraphDataAsJson)
+
+	// jalankan server di port 8080
+	port := "8080"
+	log.Printf("Server visualisasi berjalan di http://localhost:%s\n", port)
+	log.Printf("Buka browser dan akses alamat tersebut untuk melihat graf :D")
+	// http.ListenAndServe akan menjalankan server sampai program dihentikan (ex: Ctrl+C) atau jika terjadi error fatal
+	if err := http.ListenAndServe(":"+port, nil); err != nil {
+		log.Fatalf("Gagal menjalankan server: %v", err)
+	}
+}
+
+// serveVisualizerPage menyajikan file visualizer.html
+func serveVisualizerPage(w http.ResponseWriter, r *http.Request) {
+	htmlContent, err := os.ReadFile("visualizer.html")
+	if err != nil {
+		http.Error(w, "Tidak bisa membaca file visualizer.html. Pastikan file ada di root proyek.", http.StatusInternalServerError)
+		log.Printf("Error membaca visualizer.html: %v", err)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(htmlContent)
+}
+
+// serveGraphDataAsJson mengubah data graf dari scraper menjadi format JSON
+func serveGraphDataAsJson(w http.ResponseWriter, r *http.Request) {
+	if globalAllNodes == nil {
+		http.Error(w, "Data graf belum siap atau gagal di-load.", http.StatusInternalServerError)
+		return
+	}
+
+	visNodes := []map[string]interface{}{} // daftar kosong untuk menyimpan info setiap elemen (node)
+	visEdges := []map[string]interface{}{} // daftar kosong untuk menyimpan info setiap resep (edge)
+	edgeSet := make(map[string]bool)
+
+	for elementName, nodeData := range globalAllNodes {
+		// tambah node ke daftar visNodes
+		nodeVisData := map[string]interface{}{
+			"id":    elementName,
+			"label": elementName,
+			"title": elementName,
+		}
+		if nodeData.IsBaseElement {
+			nodeVisData["group"] = "baseElement"
+		} else {
+			nodeVisData["group"] = "derivedElement"
+		}
+		visNodes = append(visNodes, nodeVisData)
+
+		// hanya proses resep jika ini bukan elemen dasar dan ada cara pembuatan
+		if !nodeData.IsBaseElement && len(nodeData.DibuatDari) > 0 {
+			for _, recipePair := range nodeData.DibuatDari {
+				if recipePair[0] != nil && recipePair[1] != nil {
+					ing1Name := recipePair[0].NamaElemen
+					ing2Name := recipePair[1].NamaElemen
+					resultName := elementName
+
+					edge1Key := fmt.Sprintf("%s->%s", ing1Name, resultName)
+					if !edgeSet[edge1Key] {
+						visEdges = append(visEdges, map[string]interface{}{"from": ing1Name, "to": resultName, "arrows": "to"})
+						edgeSet[edge1Key] = true
+					}
+
+					edge2Key := fmt.Sprintf("%s->%s", ing2Name, resultName)
+					if !edgeSet[edge2Key] {
+						visEdges = append(visEdges, map[string]interface{}{"from": ing2Name, "to": resultName, "arrows": "to"})
+						edgeSet[edge2Key] = true
+					}
+				}
+			}
+		}
+	}
+
+	// gabungkan nodes dan edges ke dalam satu respons JSON
+	response := map[string]interface{}{
+		"nodes": visNodes,
+		"edges": visEdges,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Error encoding graph data to JSON: %v", err)
+		http.Error(w, "Gagal memformat data graf.", http.StatusInternalServerError)
 	}
 }
