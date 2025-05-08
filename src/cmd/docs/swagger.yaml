@@ -1,0 +1,28 @@
+info:
+  contact: {}
+  description: API untuk visualisasi data graf dari hasil scraping
+  termsOfService: http://swagger.io/terms/
+  title: AVOGADRA KEDAVRO
+  version: "1.0"
+paths:
+  /graph-data:
+    get:
+      description: Returns nodes and edges for visualization
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 'Returns {nodes: [...], edges: [...]}'
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Error message
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get graph data
+      tags:
+      - graph
+swagger: "2.0"
