@@ -1,8 +1,201 @@
 package main
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"sort"
+	"strings"
+
+	"github.com/gorilla/mux"
+	httpSwagger "github.com/swaggo/http-swagger/v2"
+
+	_ "github.com/graceevelyns/Tubes2_BE_ian/src/cmd/docs"
+	"github.com/graceevelyns/Tubes2_BE_ian/src/internal/api"
+	"github.com/graceevelyns/Tubes2_BE_ian/src/internal/model"
+	"github.com/graceevelyns/Tubes2_BE_ian/src/internal/scraper"
+)
+
+var (
+	globalAllNodes        map[string]*model.RecipeNode
+	globalBaseElements    []*model.RecipeNode
+	globalOrderedNodeKeys []string
+)
+
+type ElementOutputData struct {
+	ID       int     `json:"Id"`
+	Name     string  `json:"Name"`
+	FromPair [][]int `json:"FromPair"`
+	CanMake  []int   `json:"CanMake"`
+}
+
+var standardBaseElementsList = []string{"Air", "Earth", "Fire", "Water", "Time"}
 
 func main() {
-    fmt.Println("Backend Little Alchemy 2 - Tubes STIMA")
-    // TODO: Inisialisasi scraper, API router, dll.
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	log.Println("Memulai aplikasi Backend Little Alchemy Solver...")
+
+	log.Println("Memulai scraping data dari Fandom Wiki...")
+	var err error
+	globalAllNodes, globalBaseElements, globalOrderedNodeKeys, err = scraper.FetchAndParseData()
+	if err != nil {
+		log.Fatalf("KRITIS: Gagal melakukan scraping data awal: %v", err)
+	}
+	if len(globalAllNodes) == 0 {
+		log.Fatalf("KRITIS: Scraping tidak menghasilkan data node.")
+	}
+	if len(globalOrderedNodeKeys) != len(globalAllNodes) {
+		log.Printf("PERINGATAN PENTING di main: Jumlah kunci terurut (%d) tidak sama dengan jumlah total node di peta (%d).", len(globalOrderedNodeKeys), len(globalAllNodes))
+	}
+	log.Printf("Scraping awal berhasil. Total node unik: %d. Jumlah kunci terurut: %d.\n", len(globalAllNodes), len(globalOrderedNodeKeys))
+
+	api.InitData(globalAllNodes, globalBaseElements)
+
+	r := mux.NewRouter()
+	log.Println("Router Mux dibuat.")
+	r.PathPrefix("/swagger/").Handler(httpSwagger.WrapHandler)
+	r.HandleFunc("/api/recipes/{elementName}", api.GetRecipesHandler).Methods(http.MethodGet, http.MethodOptions)
+	r.HandleFunc("/graph-data", serveGraphDataAsIDScrapingOrder).Methods(http.MethodGet)
+
+	port := "8080"
+	log.Printf("Server API siap berjalan di http://localhost:%s\n", port)
+	log.Printf("-> Akses /api/recipes/{nama}?algorithm=... untuk mencari resep.")
+	log.Printf("-> Akses /graph-data untuk melihat data graf JSON (format ID, urutan scraping).")
+	log.Printf("-> Akses /swagger/index.html untuk dokumentasi API interaktif.")
+	if err := http.ListenAndServe(":"+port, r); err != nil {
+		log.Fatalf("Gagal menjalankan server: %v", err)
+	}
+}
+
+// serveGraphDataAsIDScrapingOrder membuat JSON format ID, urut sesuai penemuan scraper
+// Anotasi Swagger
+// @Summary      Get All Processed Graph Data (Scraping Order)
+// @Description  Mengembalikan seluruh data elemen dan resep yang valid dalam format ID terstruktur, terurut berdasarkan penemuan saat scraping. Termasuk info FromPair dan CanMake. Hanya elemen dasar atau yang punya resep yang disertakan.
+// @Tags         Graph Data
+// @Produce      json
+// @Success      200 {array} main.ElementOutputData "Array data elemen dalam format ID"
+// @Failure      500 {string} string "Error jika data graf belum siap"
+// @Router       /graph-data [get]
+func serveGraphDataAsIDScrapingOrder(w http.ResponseWriter, r *http.Request) {
+	if len(globalAllNodes) == 0 {
+		http.Error(w, "Data graf belum siap.", http.StatusInternalServerError)
+		return
+	}
+	if len(globalOrderedNodeKeys) == 0 && len(globalAllNodes) > 0 {
+		log.Println("Peringatan Kritis di Handler: globalOrderedNodeKeys kosong!")
+		http.Error(w, "Data urutan node tidak tersedia.", http.StatusInternalServerError)
+		return
+	}
+
+	nameToID := make(map[string]int)
+	idToName := make(map[int]string)
+	idDataMap := make(map[int]*ElementOutputData)
+	nextID := 1
+	isBaseMap := make(map[string]bool)
+	for _, baseName := range standardBaseElementsList {
+		isBaseMap[strings.Title(strings.ToLower(baseName))] = true
+	}
+
+	log.Printf("Handler /graph-data: Memulai assignment ID berdasarkan globalOrderedNodeKeys (jumlah: %d)", len(globalOrderedNodeKeys))
+	elementCountInMap := 0
+	for _, name := range globalOrderedNodeKeys {
+		if _, nodeExists := globalAllNodes[name]; nodeExists {
+			currentID := nextID
+			nameToID[name] = currentID
+			idToName[currentID] = name
+			idDataMap[currentID] = &ElementOutputData{ID: currentID, Name: name, FromPair: make([][]int, 0), CanMake: make([]int, 0)}
+			nextID++
+			elementCountInMap++
+		}
+	}
+	log.Printf("Handler /graph-data: Selesai assignment ID. %d node valid mendapatkan ID.", elementCountInMap)
+	if elementCountInMap != len(globalAllNodes) {
+		log.Printf("Peringatan di Handler: Jumlah node yang dapat di-map (%d) tidak sama dengan globalAllNodes (%d)!", elementCountInMap, len(globalAllNodes))
+	}
+
+	canMakeTemp := make(map[int]map[int]bool)
+	for resultName, resultNodeData := range globalAllNodes {
+		resultID, rOk := nameToID[resultName]
+		if !rOk {
+			continue
+		}
+		elementOutputData, eOk := idDataMap[resultID]
+		if !eOk {
+			continue
+		}
+
+		if !resultNodeData.IsBaseElement && len(resultNodeData.DibuatDari) > 0 {
+			processedPairs := make(map[string]bool)
+			for _, recipePair := range resultNodeData.DibuatDari {
+				if recipePair[0] == nil || recipePair[1] == nil {
+					continue
+				}
+				ing1Name := recipePair[0].NamaElemen
+				ing2Name := recipePair[1].NamaElemen
+				ing1ID, i1OK := nameToID[ing1Name]
+				ing2ID, i2OK := nameToID[ing2Name]
+				if i1OK && i2OK {
+					pairIDs := []int{ing1ID, ing2ID}
+					if pairIDs[0] > pairIDs[1] {
+						pairIDs[0], pairIDs[1] = pairIDs[1], pairIDs[0]
+					}
+					pairKey := fmt.Sprintf("%d-%d", pairIDs[0], pairIDs[1])
+					if !processedPairs[pairKey] {
+						elementOutputData.FromPair = append(elementOutputData.FromPair, pairIDs)
+						processedPairs[pairKey] = true
+					}
+					if _, ok := canMakeTemp[ing1ID]; !ok {
+						canMakeTemp[ing1ID] = make(map[int]bool)
+					}
+					canMakeTemp[ing1ID][resultID] = true
+					if ing1ID != ing2ID {
+						if _, ok := canMakeTemp[ing2ID]; !ok {
+							canMakeTemp[ing2ID] = make(map[int]bool)
+						}
+						canMakeTemp[ing2ID][resultID] = true
+					}
+				}
+			}
+		}
+	}
+	for bahanID, hasilSet := range canMakeTemp {
+		if elementOutputData, ok := idDataMap[bahanID]; ok {
+			elementOutputData.CanMake = make([]int, 0, len(hasilSet))
+			for hasilID := range hasilSet {
+				elementOutputData.CanMake = append(elementOutputData.CanMake, hasilID)
+			}
+			sort.Ints(elementOutputData.CanMake)
+		}
+	}
+
+	outputSlice := make([]*ElementOutputData, 0, len(idDataMap))
+	for _, name := range globalOrderedNodeKeys {
+		id, nameOk := nameToID[name]
+		if !nameOk {
+			continue
+		}
+
+		elementData, ok := idDataMap[id]
+		if !ok {
+			continue
+		}
+
+		isBase := false
+		if originalNode, nodeExists := globalAllNodes[elementData.Name]; nodeExists {
+			isBase = originalNode.IsBaseElement
+		}
+		hasRecipes := len(elementData.FromPair) > 0
+
+		if isBase || hasRecipes {
+			outputSlice = append(outputSlice, elementData)
+		}
+	}
+	log.Printf("Jumlah elemen setelah filter untuk /graph-data: %d\n", len(outputSlice))
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(outputSlice); err != nil {
+		log.Printf("Error encoding ID data to JSON: %v", err)
+		http.Error(w, "Gagal memformat data graf.", http.StatusInternalServerError)
+	}
 }
