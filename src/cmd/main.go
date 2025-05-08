@@ -26,11 +26,19 @@ var (
 type ElementOutputData struct {
 	ID       int     `json:"Id"`
 	Name     string  `json:"Name"`
+	Tier     int     `json:"Tier"`
 	FromPair [][]int `json:"FromPair"`
 	CanMake  []int   `json:"CanMake"`
 }
 
 var standardBaseElementsList = []string{"Air", "Earth", "Fire", "Water", "Time"}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -40,13 +48,13 @@ func main() {
 	var err error
 	globalAllNodes, globalBaseElements, globalOrderedNodeKeys, err = scraper.FetchAndParseData()
 	if err != nil {
-		log.Fatalf("KRITIS: Gagal melakukan scraping data awal: %v", err)
+		log.Fatalf("Gagal melakukan scraping data awal: %v", err)
 	}
 	if len(globalAllNodes) == 0 {
-		log.Fatalf("KRITIS: Scraping tidak menghasilkan data node.")
+		log.Fatalf("Scraping tidak menghasilkan data node.")
 	}
 	if len(globalOrderedNodeKeys) != len(globalAllNodes) {
-		log.Printf("PERINGATAN PENTING di main: Jumlah kunci terurut (%d) tidak sama dengan jumlah total node di peta (%d).", len(globalOrderedNodeKeys), len(globalAllNodes))
+		log.Printf("PERINGATAN: Jumlah kunci terurut (%d) tidak sama dengan jumlah total node di peta (%d).", len(globalOrderedNodeKeys), len(globalAllNodes))
 	}
 	log.Printf("Scraping awal berhasil. Total node unik: %d. Jumlah kunci terurut: %d.\n", len(globalAllNodes), len(globalOrderedNodeKeys))
 
@@ -61,7 +69,7 @@ func main() {
 	port := "8080"
 	log.Printf("Server API siap berjalan di http://localhost:%s\n", port)
 	log.Printf("-> Akses /api/recipes/{nama}?algorithm=... untuk mencari resep.")
-	log.Printf("-> Akses /graph-data untuk melihat data graf JSON (format ID, urutan scraping).")
+	log.Printf("-> Akses /graph-data untuk melihat data graf JSON (format ID, urutan scraping, dengan tier).")
 	log.Printf("-> Akses /swagger/index.html untuk dokumentasi API interaktif.")
 	if err := http.ListenAndServe(":"+port, r); err != nil {
 		log.Fatalf("Gagal menjalankan server: %v", err)
@@ -70,11 +78,11 @@ func main() {
 
 // serveGraphDataAsIDScrapingOrder membuat JSON format ID, urut sesuai penemuan scraper
 // Anotasi Swagger
-// @Summary      Get All Processed Graph Data (Scraping Order)
-// @Description  Mengembalikan seluruh data elemen dan resep yang valid dalam format ID terstruktur, terurut berdasarkan penemuan saat scraping. Termasuk info FromPair dan CanMake. Hanya elemen dasar atau yang punya resep yang disertakan.
+// @Summary      Get All Processed Graph Data (Scraping Order with Tiers)
+// @Description  Mengembalikan seluruh data elemen dan resep yang valid dalam format ID terstruktur, terurut berdasarkan penemuan saat scraping. Termasuk info Tier, FromPair, dan CanMake. Hanya elemen dasar atau yang punya resep yang disertakan.
 // @Tags         Graph Data
 // @Produce      json
-// @Success      200 {array} main.ElementOutputData "Array data elemen dalam format ID"
+// @Success      200 {array} main.ElementOutputData "Array data elemen dalam format ID dengan Tier"
 // @Failure      500 {string} string "Error jika data graf belum siap"
 // @Router       /graph-data [get]
 func serveGraphDataAsIDScrapingOrder(w http.ResponseWriter, r *http.Request) {
@@ -89,13 +97,8 @@ func serveGraphDataAsIDScrapingOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	nameToID := make(map[string]int)
-	idToName := make(map[int]string)
 	idDataMap := make(map[int]*ElementOutputData)
 	nextID := 1
-	isBaseMap := make(map[string]bool)
-	for _, baseName := range standardBaseElementsList {
-		isBaseMap[strings.Title(strings.ToLower(baseName))] = true
-	}
 
 	log.Printf("Handler /graph-data: Memulai assignment ID berdasarkan globalOrderedNodeKeys (jumlah: %d)", len(globalOrderedNodeKeys))
 	elementCountInMap := 0
@@ -103,8 +106,7 @@ func serveGraphDataAsIDScrapingOrder(w http.ResponseWriter, r *http.Request) {
 		if _, nodeExists := globalAllNodes[name]; nodeExists {
 			currentID := nextID
 			nameToID[name] = currentID
-			idToName[currentID] = name
-			idDataMap[currentID] = &ElementOutputData{ID: currentID, Name: name, FromPair: make([][]int, 0), CanMake: make([]int, 0)}
+			idDataMap[currentID] = &ElementOutputData{ID: currentID, Name: name, Tier: -1, FromPair: make([][]int, 0), CanMake: make([]int, 0)}
 			nextID++
 			elementCountInMap++
 		}
@@ -112,6 +114,79 @@ func serveGraphDataAsIDScrapingOrder(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Handler /graph-data: Selesai assignment ID. %d node valid mendapatkan ID.", elementCountInMap)
 	if elementCountInMap != len(globalAllNodes) {
 		log.Printf("Peringatan di Handler: Jumlah node yang dapat di-map (%d) tidak sama dengan globalAllNodes (%d)!", elementCountInMap, len(globalAllNodes))
+	}
+
+	elementTiersByName := make(map[string]int)
+	for name := range globalAllNodes {
+		elementTiersByName[name] = -1
+	}
+
+	normalizedBaseElements := make(map[string]bool)
+	for _, baseName := range standardBaseElementsList {
+		normalizedBaseElements[strings.Title(strings.ToLower(baseName))] = true
+	}
+
+	for name := range globalAllNodes {
+		if normalizedBaseElements[name] {
+			elementTiersByName[name] = 0
+		}
+	}
+
+	maxIterations := len(globalAllNodes) + 5
+	for i := 0; i < maxIterations; i++ {
+		changedInPass := false
+		for elementName, nodeData := range globalAllNodes {
+			if elementTiersByName[elementName] == 0 {
+				continue
+			}
+
+			minTierForThisElement := -1
+
+			if len(nodeData.DibuatDari) == 0 && !normalizedBaseElements[elementName] {
+				continue
+			}
+
+			for _, recipePair := range nodeData.DibuatDari {
+				if recipePair[0] == nil || recipePair[1] == nil {
+					continue
+				}
+				ing1Name := recipePair[0].NamaElemen
+				ing2Name := recipePair[1].NamaElemen
+
+				tierIng1, ok1 := elementTiersByName[ing1Name]
+				tierIng2, ok2 := elementTiersByName[ing2Name]
+
+				if ok1 && tierIng1 != -1 && ok2 && tierIng2 != -1 {
+					calculatedRecipeTier := 1 + max(tierIng1, tierIng2)
+					if minTierForThisElement == -1 || calculatedRecipeTier < minTierForThisElement {
+						minTierForThisElement = calculatedRecipeTier
+					}
+				}
+			}
+
+			if minTierForThisElement != -1 {
+				if elementTiersByName[elementName] == -1 || minTierForThisElement < elementTiersByName[elementName] {
+					elementTiersByName[elementName] = minTierForThisElement
+					changedInPass = true
+				}
+			}
+		}
+		if !changedInPass {
+			log.Printf("Kalkulasi tier konvergen pada iterasi ke-%d.", i+1)
+			break
+		}
+		if i == maxIterations-1 {
+			log.Println("Peringatan: Kalkulasi tier mencapai batas iterasi maksimum.")
+		}
+	}
+
+	for currentIDFromMap, data := range idDataMap {
+		if tier, ok := elementTiersByName[data.Name]; ok {
+			data.Tier = tier
+		} else {
+			data.Tier = -1
+		}
+		idDataMap[currentIDFromMap] = data
 	}
 
 	canMakeTemp := make(map[int]map[int]bool)
@@ -125,7 +200,12 @@ func serveGraphDataAsIDScrapingOrder(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		if !resultNodeData.IsBaseElement && len(resultNodeData.DibuatDari) > 0 {
+		isResultBase := false
+		if node, exists := globalAllNodes[resultName]; exists {
+			isResultBase = node.IsBaseElement
+		}
+
+		if !isResultBase && len(resultNodeData.DibuatDari) > 0 {
 			processedPairs := make(map[string]bool)
 			for _, recipePair := range resultNodeData.DibuatDari {
 				if recipePair[0] == nil || recipePair[1] == nil {
