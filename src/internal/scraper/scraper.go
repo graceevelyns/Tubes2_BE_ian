@@ -21,6 +21,7 @@ type RawRecipeEntry struct {
 
 var (
 	standardBaseElements = []string{"Air", "Earth", "Fire", "Water", "Time"}
+	Elements             []string
 )
 
 func isStandardBaseElement(name string) bool {
@@ -32,7 +33,7 @@ func isStandardBaseElement(name string) bool {
 	return false
 }
 
-func FetchAndParseData() (map[string]*model.RecipeNode, []*model.RecipeNode, []string, error) {
+func FetchAndParseData() (map[string]*model.RecipeTreeNode, []*model.RecipeTreeNode, []string, error) {
 	log.Println("Memulai proses scraping dari:", targetURL)
 
 	res, err := http.Get(targetURL)
@@ -56,7 +57,6 @@ func FetchAndParseData() (map[string]*model.RecipeNode, []*model.RecipeNode, []s
 
 	var tempOrderedResultNames []string
 	isNameInTempOrderedList := make(map[string]bool)
-	elementIsBaseFromRow := make(map[string]bool)
 
 	doc.Find("div.mw-parser-output table.list-table tbody tr").Each(func(i int, rowSelection *goquery.Selection) {
 		tds := rowSelection.Find("td")
@@ -96,21 +96,9 @@ func FetchAndParseData() (map[string]*model.RecipeNode, []*model.RecipeNode, []s
 
 		validResultElementsFromPage[resultElementName] = true
 
-		isBaseCurrentRow := false
-		if tds.Length() > 1 {
-			descriptionText := strings.TrimSpace(tds.Eq(1).Contents().Not("ul, script, style").Text())
-			descriptionTextLower := strings.ToLower(descriptionText)
-			if strings.Contains(descriptionTextLower, "available from the start") || strings.Contains(descriptionTextLower, "this element does not have any recipes") {
-				if isStandardBaseElement(resultElementName) {
-					isBaseCurrentRow = true
-				}
-			}
-		}
-
 		if !isNameInTempOrderedList[resultElementName] {
 			tempOrderedResultNames = append(tempOrderedResultNames, resultElementName)
 			isNameInTempOrderedList[resultElementName] = true
-			elementIsBaseFromRow[resultElementName] = isBaseCurrentRow
 		}
 
 		if tds.Length() > 1 {
@@ -140,47 +128,57 @@ func FetchAndParseData() (map[string]*model.RecipeNode, []*model.RecipeNode, []s
 		if validResultElementsFromPage[rr.ResultElement] {
 			finalRawRecipes = append(finalRawRecipes, rr)
 		} else {
-			log.Printf("FILTER (RAW RECIPE): Membuang resep dengan hasil '%s' karena hasil tidak valid.", rr.ResultElement)
+			log.Printf("FILTER (RAW RECIPE): Membuang resep dengan hasil '%s' karena hasil tidak valid/bagian dari pack.", rr.ResultElement)
 		}
 	}
 	rawRecipes = finalRawRecipes
 	log.Printf("Setelah filter rawRecipes, tersisa %d entri resep.", len(rawRecipes))
 
-	allNodes := make(map[string]*model.RecipeNode)
+	allNodes := make(map[string]*model.RecipeTreeNode)
 	var finalOrderedNodeKeys []string
 
 	for _, elementName := range tempOrderedResultNames {
-		isBase := elementIsBaseFromRow[elementName]
-		if elementName == "Time" {
-			isBase = true
+		node := &model.RecipeTreeNode{
+			NamaElemen: elementName,
+			DibuatDari: make([][2]*model.RecipeTreeNode, 0),
 		}
-
-		node := &model.RecipeNode{NamaElemen: elementName, IsBaseElement: isBase, DibuatDari: make([][2]*model.RecipeNode, 0)}
 		allNodes[elementName] = node
 		finalOrderedNodeKeys = append(finalOrderedNodeKeys, elementName)
 	}
 
 	for _, baseName := range standardBaseElements {
-		if node, exists := allNodes[baseName]; exists {
-			if !node.IsBaseElement {
-				log.Printf("Info: Mengoreksi flag IsBaseElement untuk '%s' menjadi true.", baseName)
-				node.IsBaseElement = true
+		if _, exists := allNodes[baseName]; !exists {
+			log.Printf("Info: Elemen dasar standar '%s' tidak ditemukan dari scraping baris. Dibuat manual dan ditambahkan.", baseName)
+			node := &model.RecipeTreeNode{
+				NamaElemen: baseName,
+				DibuatDari: make([][2]*model.RecipeTreeNode, 0),
 			}
-		} else {
-			log.Printf("Info: Elemen dasar standar '%s' tidak ditemukan dari scraping baris. Dibuat manual dan ditambahkan ke akhir daftar terurut.", baseName)
-			node := &model.RecipeNode{NamaElemen: baseName, IsBaseElement: true, DibuatDari: make([][2]*model.RecipeNode, 0)}
 			allNodes[baseName] = node
-			finalOrderedNodeKeys = append(finalOrderedNodeKeys, baseName)
+			if !isNameInTempOrderedList[baseName] {
+				finalOrderedNodeKeys = append(finalOrderedNodeKeys, baseName)
+			}
 		}
 	}
+	finalUniqueKeysMap := make(map[string]bool)
+	var cleanedFinalOrderedNodeKeys []string
+	for _, key := range finalOrderedNodeKeys {
+		if !finalUniqueKeysMap[key] {
+			finalUniqueKeysMap[key] = true
+			cleanedFinalOrderedNodeKeys = append(cleanedFinalOrderedNodeKeys, key)
+		}
+	}
+	finalOrderedNodeKeys = cleanedFinalOrderedNodeKeys
+	// sort.Strings(finalOrderedNodeKeys)
 
-	var baseElementNodes []*model.RecipeNode
+	var baseElementNodes []*model.RecipeTreeNode
 	tempBaseSet := make(map[string]bool)
 	for _, key := range finalOrderedNodeKeys {
-		if node, ok := allNodes[key]; ok && node.IsBaseElement {
-			if !tempBaseSet[node.NamaElemen] {
-				baseElementNodes = append(baseElementNodes, node)
-				tempBaseSet[node.NamaElemen] = true
+		if node, ok := allNodes[key]; ok {
+			if isStandardBaseElement(node.NamaElemen) {
+				if !tempBaseSet[node.NamaElemen] {
+					baseElementNodes = append(baseElementNodes, node)
+					tempBaseSet[node.NamaElemen] = true
+				}
 			}
 		}
 	}
@@ -190,7 +188,7 @@ func FetchAndParseData() (map[string]*model.RecipeNode, []*model.RecipeNode, []s
 
 	for _, rr := range rawRecipes {
 		resultNode, rExists := allNodes[rr.ResultElement]
-		if !rExists || resultNode.IsBaseElement {
+		if !rExists || isStandardBaseElement(resultNode.NamaElemen) {
 			continue
 		}
 
@@ -207,16 +205,33 @@ func FetchAndParseData() (map[string]*model.RecipeNode, []*model.RecipeNode, []s
 					}
 				}
 				if !combinationExists {
-					resultNode.DibuatDari = append(resultNode.DibuatDari, [2]*model.RecipeNode{ing1Node, ing2Node})
+					resultNode.DibuatDari = append(resultNode.DibuatDari, [2]*model.RecipeTreeNode{ing1Node, ing2Node})
+				}
+			} else {
+				if !i1Exists {
+					log.Printf("Peringatan: Ingredient '%s' untuk hasil '%s' tidak ditemukan di allNodes.", rr.Ingredient1, rr.ResultElement)
+				}
+				if !i2Exists {
+					log.Printf("Peringatan: Ingredient '%s' untuk hasil '%s' tidak ditemukan di allNodes.", rr.Ingredient2, rr.ResultElement)
 				}
 			}
 		}
 	}
 
-	log.Printf("Pembuatan struktur node selesai. Total node unik: %d. Elemen dasar teridentifikasi: %d. Kunci terurut: %d\n", len(allNodes), len(baseElementNodes), len(finalOrderedNodeKeys))
-	if len(finalOrderedNodeKeys) != len(allNodes) {
-		log.Printf("PERINGATAN KRITIS: Panjang finalOrderedNodeKeys (%d) tidak sama dengan jumlah node di allNodes (%d)!", len(finalOrderedNodeKeys), len(allNodes))
-	}
+	log.Printf("Pembuatan struktur node selesai. Total node unik setelah pembersihan: %d. Elemen dasar teridentifikasi: %d.", len(allNodes), len(baseElementNodes))
 
-	return allNodes, baseElementNodes, finalOrderedNodeKeys, nil
+	Elements = make([]string, len(finalOrderedNodeKeys))
+	copy(Elements, finalOrderedNodeKeys)
+
+	log.Printf("Variabel global Elements telah diisi dengan %d elemen.", len(Elements))
+
+	return allNodes, baseElementNodes, Elements, nil
+}
+
+func GetElements() []string {
+	if Elements == nil {
+		log.Println("Peringatan: Variabel global Elements belum diinisialisasi. Panggil FetchAndParseData terlebih dahulu.")
+		return []string{}
+	}
+	return Elements
 }

@@ -1,4 +1,3 @@
-// src/cmd/main.go
 package main
 
 import (
@@ -19,8 +18,8 @@ import (
 )
 
 var (
-	globalAllNodes        map[string]*model.RecipeNode
-	globalBaseElements    []*model.RecipeNode
+	globalAllNodes        map[string]*model.RecipeTreeNode
+	globalBaseElements    []*model.RecipeTreeNode
 	globalOrderedNodeKeys []string
 )
 
@@ -33,6 +32,18 @@ type ElementOutputData struct {
 }
 
 var standardBaseElementsList = []string{"Air", "Earth", "Fire", "Water", "Time"}
+var normalizedStandardBaseElements map[string]bool
+
+func init() {
+	normalizedStandardBaseElements = make(map[string]bool)
+	for _, baseName := range standardBaseElementsList {
+		normalizedStandardBaseElements[strings.Title(strings.ToLower(baseName))] = true
+	}
+}
+
+func isStandardBase(elementName string) bool {
+	return normalizedStandardBaseElements[elementName]
+}
 
 func max(a, b int) int {
 	if a > b {
@@ -55,7 +66,7 @@ func main() {
 		log.Fatalf("Scraping tidak menghasilkan data node.")
 	}
 	if len(globalOrderedNodeKeys) != len(globalAllNodes) {
-		log.Printf("PERINGATAN: Jumlah kunci terurut (%d) tidak sama dengan jumlah total node di peta (%d).", len(globalOrderedNodeKeys), len(globalAllNodes))
+		log.Printf("PERINGATAN PENTING di main: Jumlah kunci terurut (%d) tidak sama dengan jumlah total node di peta (%d). Ini mungkin mengindikasikan masalah pada logika scraper dalam menyusun daftar terurut.", len(globalOrderedNodeKeys), len(globalAllNodes))
 	}
 	log.Printf("Scraping awal berhasil. Total node unik: %d. Jumlah kunci terurut: %d.\n", len(globalAllNodes), len(globalOrderedNodeKeys))
 
@@ -114,7 +125,7 @@ func serveGraphDataAsIDScrapingOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("Handler /graph-data: Selesai assignment ID. %d node valid mendapatkan ID.", elementCountInMap)
 	if elementCountInMap != len(globalAllNodes) {
-		log.Printf("Peringatan di Handler: Jumlah node yang dapat di-map (%d) tidak sama dengan globalAllNodes (%d)!", elementCountInMap, len(globalAllNodes))
+		log.Printf("Peringatan di Handler: Jumlah node yang diberi ID (%d) dari globalOrderedNodeKeys tidak sama dengan total node di globalAllNodes (%d). Beberapa node mungkin tidak termasuk dalam output.", elementCountInMap, len(globalAllNodes))
 	}
 
 	elementTiersByName := make(map[string]int)
@@ -122,13 +133,8 @@ func serveGraphDataAsIDScrapingOrder(w http.ResponseWriter, r *http.Request) {
 		elementTiersByName[name] = -1
 	}
 
-	normalizedBaseElements := make(map[string]bool)
-	for _, baseName := range standardBaseElementsList {
-		normalizedBaseElements[strings.Title(strings.ToLower(baseName))] = true
-	}
-
 	for name := range globalAllNodes {
-		if normalizedBaseElements[name] {
+		if isStandardBase(name) {
 			elementTiersByName[name] = 0
 		}
 	}
@@ -136,18 +142,17 @@ func serveGraphDataAsIDScrapingOrder(w http.ResponseWriter, r *http.Request) {
 	maxIterations := len(globalAllNodes) + 5
 	for i := 0; i < maxIterations; i++ {
 		changedInPass := false
-		for elementName, nodeData := range globalAllNodes {
-			if elementTiersByName[elementName] == 0 {
+		for elementName, treeNode := range globalAllNodes {
+			if tier, _ := elementTiersByName[elementName]; tier == 0 {
 				continue
 			}
 
 			minTierForThisElement := -1
-
-			if len(nodeData.DibuatDari) == 0 && !normalizedBaseElements[elementName] {
+			if (treeNode.DibuatDari == nil || len(treeNode.DibuatDari) == 0) && !isStandardBase(elementName) {
 				continue
 			}
 
-			for _, recipePair := range nodeData.DibuatDari {
+			for _, recipePair := range treeNode.DibuatDari {
 				if recipePair[0] == nil || recipePair[1] == nil {
 					continue
 				}
@@ -166,7 +171,8 @@ func serveGraphDataAsIDScrapingOrder(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if minTierForThisElement != -1 {
-				if elementTiersByName[elementName] == -1 || minTierForThisElement < elementTiersByName[elementName] {
+				currentTier, _ := elementTiersByName[elementName]
+				if currentTier == -1 || minTierForThisElement < currentTier {
 					elementTiersByName[elementName] = minTierForThisElement
 					changedInPass = true
 				}
@@ -181,17 +187,16 @@ func serveGraphDataAsIDScrapingOrder(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	for currentIDFromMap, data := range idDataMap {
+	for _, data := range idDataMap {
 		if tier, ok := elementTiersByName[data.Name]; ok {
 			data.Tier = tier
 		} else {
 			data.Tier = -1
 		}
-		idDataMap[currentIDFromMap] = data
 	}
 
 	canMakeTemp := make(map[int]map[int]bool)
-	for resultName, resultNodeData := range globalAllNodes {
+	for resultName, treeNode := range globalAllNodes {
 		resultID, rOk := nameToID[resultName]
 		if !rOk {
 			continue
@@ -201,14 +206,11 @@ func serveGraphDataAsIDScrapingOrder(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		isResultBase := false
-		if node, exists := globalAllNodes[resultName]; exists {
-			isResultBase = node.IsBaseElement
-		}
+		isResultBase := isStandardBase(resultName)
 
-		if !isResultBase && len(resultNodeData.DibuatDari) > 0 {
+		if !isResultBase && treeNode.DibuatDari != nil && len(treeNode.DibuatDari) > 0 {
 			processedPairs := make(map[string]bool)
-			for _, recipePair := range resultNodeData.DibuatDari {
+			for _, recipePair := range treeNode.DibuatDari {
 				if recipePair[0] == nil || recipePair[1] == nil {
 					continue
 				}
@@ -256,16 +258,12 @@ func serveGraphDataAsIDScrapingOrder(w http.ResponseWriter, r *http.Request) {
 		if !nameOk {
 			continue
 		}
-
 		elementData, ok := idDataMap[id]
 		if !ok {
 			continue
 		}
 
-		isBase := false
-		if originalNode, nodeExists := globalAllNodes[elementData.Name]; nodeExists {
-			isBase = originalNode.IsBaseElement
-		}
+		isBase := isStandardBase(elementData.Name)
 		hasRecipes := len(elementData.FromPair) > 0
 
 		if isBase || hasRecipes {
