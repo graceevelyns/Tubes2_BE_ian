@@ -3,7 +3,7 @@ package algorithm
 import (
 	"log"
 
-	"github.com/graceevelyns/Tubes2_BE_ian/src/internal/scraper"
+	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/internal/scraper"
 )
 
 var elements []*scraper.Element
