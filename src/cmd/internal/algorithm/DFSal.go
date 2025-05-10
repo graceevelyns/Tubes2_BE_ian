@@ -107,11 +107,17 @@ func Dfs(start int, needFound int, mult int) *RecipeTreeNode {
 			log.Printf("[DFS_DEBUG] [%s] Panggilan DFS untuk LeftChildID: %d selesai. leftNode.BanyakResep: %d", parentElementName, leftChildID, leftNode.BanyakResep)
 		}
 
+		//leftnode tidak ditemukan
+		if leftNode.BanyakResep == 0 {
+			log.Printf("[DFS_DEBUG] [%s] leftNode.BanyakResep adalah 0. Menghentikan loop FromPair.", parentElementName)
+			continue
+		}
+
 		// mult untuk anak kanan menggunakan leftNode.BanyakResep
 		needFoundForRight := needFound - Tree.BanyakResep // Ini mungkin perlu dihitung ulang jika Tree.BanyakResep berubah oleh leftNode
 		multForRight := 1                                 // Default, jika leftNode nil atau BanyakResep 0
 		if leftNode != nil {
-			multForRight = leftNode.BanyakResep
+			multForRight = leftNode.BanyakResep * mult
 		}
 		log.Printf("[DFS_DEBUG] [%s] Memanggil DFS untuk RightChildID: %d, needFoundForRight: %d, multForRight: %d", parentElementName, rightChildID, needFoundForRight, multForRight)
 		var rightNode = Dfs(rightChildID, needFoundForRight, multForRight)
@@ -123,10 +129,16 @@ func Dfs(start int, needFound int, mult int) *RecipeTreeNode {
 			log.Printf("[DFS_DEBUG] [%s] Panggilan DFS untuk RightChildID: %d selesai. rightNode.BanyakResep: %d", parentElementName, rightChildID, rightNode.BanyakResep)
 		}
 
+		// rightNode tidak ditemukan
+		if rightNode.BanyakResep == 0 {
+			log.Printf("[DFS_DEBUG] [%s] rightNode.BanyakResep adalah 0. Menghentikan loop FromPair.", parentElementName)
+			continue
+		}
+
 		// Hanya tambahkan jika kedua node valid, untuk menghindari panic jika salah satunya nil
 		if leftNode != nil && rightNode != nil {
 			Tree.DibuatDari = append(Tree.DibuatDari, RecipeTreeNodeChild{Parent: &Tree, LeftChild: leftNode, RightChild: rightNode, LeftChildID: leftChildID, RightChildID: rightChildID})
-			newRecipesFromPair := leftNode.BanyakResep * rightNode.BanyakResep
+			newRecipesFromPair := rightNode.BanyakResep
 			Tree.BanyakResep += newRecipesFromPair
 			log.Printf("[DFS_DEBUG] [%s] Pair (LeftID: %d, RightID: %d) ditambahkan ke DibuatDari. Resep baru dari pair: %d. Total Tree.BanyakResep: %d",
 				parentElementName, leftChildID, rightChildID, newRecipesFromPair, Tree.BanyakResep)

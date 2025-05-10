@@ -20,6 +20,7 @@ type RecipeTreeNodeChild struct {
 }
 
 // tambah BanyakResep ke Parent"
+
 func BfsHelper(a *RecipeTreeNode) {
 	log.Printf("[BFS_HELPER_DEBUG] === Memulai BfsHelper untuk node: '%s', BanyakResepAwalNodeA: %d ===", a.NamaElemen, a.BanyakResep)
 
@@ -133,6 +134,35 @@ func BfsHelper(a *RecipeTreeNode) {
 		log.Printf("[BFS_HELPER_DEBUG] newBanyakResep (%d) tidak lebih besar dari 0. Tidak ada update terakhir untuk a.BanyakResep.", newBanyakResep)
 	}
 	log.Printf("[BFS_HELPER_DEBUG] === Selesai BfsHelper untuk node AWAL: '%s'. BanyakResepAkhirNodeAWAL (originalNodeA): %d. BanyakResepNodeRoot (jika 'a' mencapai root): %d ===", originalNodeA.NamaElemen, originalNodeA.BanyakResep, a.BanyakResep)
+
+}
+
+func BfsHelperORI(a *RecipeTreeNode) {
+	kiri := (a.Parent.LeftChild == a)
+	newBanyakResep := 1
+	for a.Parent != nil {
+		if a.Parent.LeftChild.BanyakResep > 0 && a.Parent.RightChild.BanyakResep > 0 {
+			a.Parent.Parent.BanyakResep -= a.Parent.LeftChild.BanyakResep * a.Parent.RightChild.BanyakResep
+			a.BanyakResep = newBanyakResep
+		} else if a.Parent.LeftChild.BanyakResep == 0 && a.Parent.RightChild.BanyakResep == 0 {
+			a.BanyakResep = newBanyakResep
+			newBanyakResep = 0
+		} else if (kiri && a.Parent.LeftChild.BanyakResep == 0) || (!kiri && a.Parent.RightChild.BanyakResep == 0) {
+			a.BanyakResep = newBanyakResep
+			if kiri {
+				newBanyakResep = a.BanyakResep * a.Parent.RightChild.BanyakResep
+			} else {
+				newBanyakResep = a.BanyakResep * a.Parent.LeftChild.BanyakResep
+			}
+		} else if (kiri && a.Parent.RightChild.BanyakResep == 0) || (!kiri && a.Parent.LeftChild.BanyakResep == 0) {
+			a.BanyakResep = newBanyakResep
+			newBanyakResep = 0
+		} else { // ERROR !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+			newBanyakResep = 0
+		}
+		a = a.Parent.Parent
+	}
+	a.BanyakResep += newBanyakResep
 
 }
 
@@ -317,7 +347,7 @@ func Bfs(start int, needFound int, mult int) *RecipeTreeNode {
 			} else if current.LeftChild.Parent != &current {
 				log.Printf("[BFS_DEBUG] [Loop %d] PERINGATAN SEBELUM BFSHELPER (KIRI): current.LeftChild.Parent TIDAK menunjuk ke &current!", processedInQueue)
 			}
-			BfsHelper(current.LeftChild)
+			BfsHelperORI(current.LeftChild)
 		} else {
 			log.Printf("[BFS_DEBUG] [Loop %d] LeftChild '%s' (ID:%d) bukan elemen dasar. Mengekspansi...", processedInQueue, current.LeftChild.NamaElemen, current.LeftChildID)
 			expandingParentNode := current.LeftChild   // Ini adalah *RecipeTreeNode yang akan menjadi .Parent untuk anak-anaknya
@@ -380,7 +410,7 @@ func Bfs(start int, needFound int, mult int) *RecipeTreeNode {
 			} else if current.RightChild.Parent != &current {
 				log.Printf("[BFS_DEBUG] [Loop %d] PERINGATAN SEBELUM BFSHELPER (KANAN): current.RightChild.Parent TIDAK menunjuk ke &current!", processedInQueue)
 			}
-			BfsHelper(current.RightChild)
+			BfsHelperORI(current.RightChild)
 		} else {
 			log.Printf("[BFS_DEBUG] [Loop %d] RightChild '%s' (ID:%d) bukan elemen dasar. Mengekspansi...", processedInQueue, current.RightChild.NamaElemen, current.RightChildID)
 			expandingParentNode := current.RightChild
