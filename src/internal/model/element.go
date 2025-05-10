@@ -8,19 +8,19 @@ type RecipeTreeNode struct {
 type Recipe struct {
 	// ditemukan bool
 	// stepByStep []int
-	banyakNode int
-	resep      *RecipeTreeNode
+	BanyakNode int
+	Resep      *RecipeTreeNode
 }
 
 type RecipeList struct {
-	namaElemen    string
-	kumpulanResep []Recipe
-	banyakResep   int
+	NamaElemen    string
+	KumpulanResep []Recipe
+	BanyakResep   int
 }
 
 type Element struct {
-	id       int
-	tier     int
+	Id       int
+	Tier     int
 	Name     string
 	FromPair [][2]int
 	CanMake  []int
