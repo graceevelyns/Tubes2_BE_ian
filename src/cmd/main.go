@@ -10,9 +10,9 @@ import (
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 
 	_ "github.com/graceevelyns/Tubes2_BE_ian/src/cmd/docs"
-	"github.com/graceevelyns/Tubes2_BE_ian/src/internal/api"
-	"github.com/graceevelyns/Tubes2_BE_ian/src/internal/scraper"
-	"github.com/graceevelyns/Tubes2_BE_ian/src/internal/algorithm"
+	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/internal/api"
+	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/internal/scraper"
+	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/internal/algorithm"
 )
 
 var (
@@ -54,31 +54,18 @@ func main() {
 	// router mux untuk menangani permintaan HTTP
 	// dan menyajikan data graf yang sudah diproses
 
-	// @Summary      Get All Processed Graph Data
-	// @Description  Mengembalikan seluruh data elemen dan resep yang valid dalam format ID terstruktur.
-	// @Tags         Graph Data
-	// @Produce      json
-	// @Success      200 {array} scraper.Element "Array data elemen dalam format ID dengan Tier"
-	// @Failure      500 {string} string "Error jika data graf belum siap atau tidak valid"
-	// @Router       /graph-data [get]
+	//	@Summary		Get All Processed Graph Data
+	//	@Description	Mengembalikan seluruh data elemen dan resep yang valid dalam format ID terstruktur.
+	//	@Tags			Graph Data
+	//	@Produce		json
+	//	@Success		200	{array}		scraper.Element	"Array data elemen dalam format ID dengan Tier"
+	//	@Failure		500	{string}	string			"Error jika data graf belum siap atau tidak valid"
+	//	@Router			/graph-data [get]
 	r := mux.NewRouter()
 	log.Println("Router Mux dibuat.")
 	r.PathPrefix("/swagger/").Handler(httpSwagger.WrapHandler)
 	r.HandleFunc("/graph-data", serveGraphDataHandler).Methods(http.MethodGet)
 
-	// @Summary      Solve Recipe
-	// @Description  Finds recipes for a given element using either BFS or DFS.
-	// @Tags         Recipe Solver
-	// @Produce      json
-	// @Param        element   query  string  true  "Name of the element to find recipes for (e.g., Brick)" example(Brick)
-	// @Param        algorithm query  string  false "Algorithm to use ('dfs' or 'bfs')" Enums(dfs, bfs) default(dfs)
-	// @Param        count     query  int     false "Number of recipes to find (approximate for root)" default(1) minimum(1)
-	// @Param        mode      query  string  false "Search mode (e.g., 'shortest', 'all' - currently informational)" default(shortest)
-	// @Success      200 {object} handler.RecipeSolution "Successfully found recipe(s)"
-	// @Failure      400 {string} string "Invalid query parameters"
-	// @Failure      404 {string} string "Element not found"
-	// @Failure      500 {string} string "Internal server error or algorithm failed"
-	// @Router       /solve-recipe [get]
 	r.Handle("/solve-recipe", solveRecipe).Methods(http.MethodGet)
 
 
@@ -95,13 +82,13 @@ func main() {
 
 // serveGraphDataHandler menyajikan data graf yang sudah diproses.
 // Anotasi Swagger
-// @Summary      Get All Processed Graph Data
-// @Description  Mengembalikan seluruh data elemen dan resep yang valid dalam format ID terstruktur, terurut berdasarkan penemuan saat scraping. Termasuk info Tier, FromPair, dan CanMake. Hanya elemen dasar atau yang punya resep valid dan tier terhitung yang disertakan.
-// @Tags         Graph Data
-// @Produce      json
-// @Success      200 {array} scraper.Element "Array data elemen dalam format ID dengan Tier" // Tipe di swagger diupdate
-// @Failure      500 {string} string "Error jika data graf belum siap atau tidak valid"
-// @Router       /graph-data [get]
+//	@Summary		Get All Processed Graph Data
+//	@Description	Mengembalikan seluruh data elemen dan resep yang valid dalam format ID terstruktur, terurut berdasarkan penemuan saat scraping. Termasuk info Tier, FromPair, dan CanMake. Hanya elemen dasar atau yang punya resep valid dan tier terhitung yang disertakan.
+//	@Tags			Graph Data
+//	@Produce		json
+//	@Success		200	{array}		scraper.Element	"Array data elemen dalam format ID dengan Tier"	//	Tipe	di	swagger	diupdate
+//	@Failure		500	{string}	string			"Error jika data graf belum siap atau tidak valid"
+//	@Router			/graph-data [get]
 func serveGraphDataHandler(w http.ResponseWriter, r *http.Request) {
 	if processedGraphData == nil || len(processedGraphData) == 0 {
 		log.Println("Handler /graph-data: processedGraphData belum siap atau kosong.")

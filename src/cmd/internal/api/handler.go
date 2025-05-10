@@ -9,10 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/graceevelyns/Tubes2_BE_ian/src/internal/algorithm"
+	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/internal/algorithm"
 	// "github.com/graceevelyns/Tubes2_BE_ian/src/internal/scraper"
+	_ "github.com/graceevelyns/Tubes2_BE_ian/src/cmd/docs"
 )
 
+// RecipeSolution represents the solution containing found recipes
+//	@swagger:api
 type RecipeSolution struct {
 	ElementName  string       `json:"elementName"`
 	SearchParams SearchParams `json:"searchParams"`
@@ -22,12 +25,16 @@ type RecipeSolution struct {
 	Recipes      []RecipePath `json:"recipes"`
 }
 
+// SearchParams represents the search parameters
+//	@swagger:api
 type SearchParams struct {
 	Algorithm string `json:"algorithm"`
 	Count     int    `json:"count"`
 	Mode      string `json:"mode"`
 }
 
+// RecipePath represents a single recipe path
+//	@swagger:api
 type RecipePath struct {
 	NamaElemen    string         `json:"namaElemen"`
 	IsBaseElement bool           `json:"isBaseElement"`
@@ -96,6 +103,17 @@ func NewSolveHandler(nameToID map[string]int, idToName map[int]string) *SolveHan
 	}
 }
 
+//	@Summary		Get recipes for an element
+//	@Description	Finds recipes to create the specified element using either DFS or BFS algorithm
+//	@Tags			recipes
+//	@Accept			json
+//	@Produce		json
+//	@Param			element		query		string				true	"Element name to find recipes for"
+//	@Param			algorithm	query		string				false	"Search algorithm (dfs or bfs)"	Enums(dfs, bfs)	default(dfs)
+//	@Param			count		query		int					false	"Number of recipes to find"		minimum(1)		default(1)
+//	@Param			mode		query		string				false	"Search mode"					default(shortest)
+//	@Success		200			{object}	api.RecipeSolution	"Successful response"
+//	@Router			/solve-recipe [get]
 func (sh *SolveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	queryParams := r.URL.Query()
 	elementNameQuery := strings.TrimSpace(queryParams.Get("element"))

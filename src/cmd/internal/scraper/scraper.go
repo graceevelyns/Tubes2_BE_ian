@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/graceevelyns/Tubes2_BE_ian/src/internal/model"
+	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/internal/model"
 )
 
 const targetURL = "https://little-alchemy.fandom.com/wiki/Elements_(Little_Alchemy_2)"
