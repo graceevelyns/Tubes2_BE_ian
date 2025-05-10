@@ -1,0 +1,126 @@
+definitions:
+  api.RecipePath:
+    properties:
+      dibuatDari:
+        items:
+          items:
+            $ref: '#/definitions/api.RecipePath'
+          type: array
+        type: array
+      isBaseElement:
+        type: boolean
+      namaElemen:
+        type: string
+    type: object
+  api.RecipeSolution:
+    properties:
+      elementName:
+        type: string
+      found:
+        type: boolean
+      nodesVisited:
+        type: integer
+      recipes:
+        items:
+          $ref: '#/definitions/api.RecipePath'
+        type: array
+      searchParams:
+        $ref: '#/definitions/api.SearchParams'
+      searchTimeMs:
+        type: number
+    type: object
+  api.SearchParams:
+    properties:
+      algorithm:
+        type: string
+      count:
+        type: integer
+      mode:
+        type: string
+    type: object
+  scraper.Element:
+    properties:
+      CanMake:
+        items:
+          type: integer
+        type: array
+      FromPair:
+        items:
+          items:
+            type: integer
+          type: array
+        type: array
+      Id:
+        type: integer
+      Name:
+        type: string
+      Tier:
+        type: integer
+    type: object
+info:
+  contact: {}
+paths:
+  /graph-data:
+    get:
+      description: Mengembalikan seluruh data elemen dan resep yang valid dalam format
+        ID terstruktur, terurut berdasarkan penemuan saat scraping. Termasuk info
+        Tier, FromPair, dan CanMake. Hanya elemen dasar atau yang punya resep valid
+        dan tier terhitung yang disertakan.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: "Array data elemen dalam format ID dengan Tier\"\t//\tTipe\tdi\tswagger\tdiupdate"
+          schema:
+            items:
+              $ref: '#/definitions/scraper.Element'
+            type: array
+        "500":
+          description: Error jika data graf belum siap atau tidak valid
+          schema:
+            type: string
+      summary: Get All Processed Graph Data
+      tags:
+      - Graph Data
+  /solve-recipe:
+    get:
+      consumes:
+      - application/json
+      description: Finds recipes to create the specified element using either DFS
+        or BFS algorithm
+      parameters:
+      - description: Element name to find recipes for
+        in: query
+        name: element
+        required: true
+        type: string
+      - default: dfs
+        description: Search algorithm (dfs or bfs)
+        enum:
+        - dfs
+        - bfs
+        in: query
+        name: algorithm
+        type: string
+      - default: 1
+        description: Number of recipes to find
+        in: query
+        minimum: 1
+        name: count
+        type: integer
+      - default: shortest
+        description: Search mode
+        in: query
+        name: mode
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Successful response
+          schema:
+            $ref: '#/definitions/api.RecipeSolution'
+      summary: Get recipes for an element
+      tags:
+      - recipes
+swagger: "2.0"
