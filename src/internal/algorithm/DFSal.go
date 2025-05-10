@@ -2,6 +2,8 @@ package algorithm
 
 import (
 	"log"
+	"sync"
+	"sync/atomic"
 
 	"github.com/graceevelyns/Tubes2_BE_ian/src/internal/scraper"
 )
@@ -154,4 +156,59 @@ func Dfs(start int, needFound int, mult int) *RecipeTreeNode {
 	var result = &Tree
 	log.Printf("[DFS_DEBUG] Selesai DFS untuk '%s' (ID dari start: %d). Mengembalikan Tree.BanyakResep: %d. Jumlah DibuatDari: %d", result.NamaElemen, start, result.BanyakResep, len(result.DibuatDari))
 	return result
+}
+
+func ParallelDFS(targetID, needFound, maxGoroutine int) *RecipeTreeNode {
+	var wg sync.WaitGroup
+	resultsChan := make(chan *RecipeTreeNodeChild, needFound*2)
+	found := int32(0)
+	sema := make(chan struct{}, maxGoroutine)
+
+	var results = RecipeTreeNode{
+		NamaElemen:  elements[targetID].Name,
+		DibuatDari:  make([]RecipeTreeNodeChild, 0),
+		BanyakResep: 0,
+		Parent:      nil,
+	}
+	for _, pair := range elements[targetID].FromPair {
+		wg.Add(1)
+
+		// ambil slot di semaphore
+		sema <- struct{}{}
+
+		go func(pair [2]int) {
+			defer wg.Done()
+			defer func() { <-sema }() // kembalikan slot setelah selesai
+			if IsValid(targetID, pair[0], pair[1]) {
+				log.Printf("[PARALLEL_DFS_DEBUG] Pair (LeftID: %d, RightID: %d) VALID. Melanjutkan goroutine.", pair[0], pair[1])
+				left := Dfs(pair[0], needFound, 1)
+				right := Dfs(pair[1], needFound, 1)
+	
+				if left != nil && right != nil && left.BanyakResep > 0 && right.BanyakResep > 0 {
+	
+					childNode := RecipeTreeNodeChild{
+						Parent:       &results,
+						LeftChild:    left,
+						RightChild:   right,
+						LeftChildID:  pair[0],
+						RightChildID: pair[1],
+					}
+					if atomic.LoadInt32(&found) < int32(needFound) {
+						results.DibuatDari = append(results.DibuatDari, childNode)
+						results.BanyakResep += right.BanyakResep
+						atomic.AddInt32(&found, int32(right.BanyakResep))
+					}
+				}
+			}
+		}([2]int{pair[0], pair[1]})
+	}
+
+	// Tutup channel hasil setelah semua selesai
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+	}()
+
+	var finResults = &results
+	return finResults
 }
