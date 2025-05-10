@@ -64,6 +64,10 @@ func isBFSPath (a *RecipeTreeNodeChild) bool{
 	return (a.leftChild.banyakResep > 0 || isBasicElement(*a.leftChild)) && (a.rightChild.banyakResep > 0 || isBasicElement(*a.rightChild))
 }
 
+func isValid (idParent int, idLeftChild int, idRightChild int) bool {
+	return elements[idParent].tier > elements[idLeftChild].tier && elements[idParent].tier > elements[idRightChild].tier 
+}
+
 func bfs(start int, needFound int, mult int) *RecipeTreeNode {
 	var Tree = RecipeTreeNode{
 		namaElemen: elements[start].Name,
@@ -75,21 +79,24 @@ func bfs(start int, needFound int, mult int) *RecipeTreeNode {
 	//initialize queue
 	queue := make([]RecipeTreeNodeChild, 0)
 	for i := 0 ; i < len(elements[start].FromPair); i++ {
-		queue = append(queue, RecipeTreeNodeChild{
-			parent: &Tree,
-			leftChild: &RecipeTreeNode{
-				namaElemen: elements[elements[start].FromPair[i][0]].Name,
-				dibuatDari: make([]RecipeTreeNodeChild, 0),
-				banyakResep: 0,
-			},
-			rightChild: &RecipeTreeNode{
-				namaElemen: elements[elements[start].FromPair[i][1]].Name,
-				dibuatDari: make([]RecipeTreeNodeChild, 0),
-				banyakResep: 0,
-			},
-			leftChildID: elements[start].FromPair[i][0],
-			rightChildID: elements[start].FromPair[i][1],
-		})
+		if isValid(start, elements[start].FromPair[i][0], elements[start].FromPair[i][1]){
+
+			queue = append(queue, RecipeTreeNodeChild{
+				parent: &Tree,
+				leftChild: &RecipeTreeNode{
+					namaElemen: elements[elements[start].FromPair[i][0]].Name,
+					dibuatDari: make([]RecipeTreeNodeChild, 0),
+					banyakResep: 0,
+				},
+				rightChild: &RecipeTreeNode{
+					namaElemen: elements[elements[start].FromPair[i][1]].Name,
+					dibuatDari: make([]RecipeTreeNodeChild, 0),
+					banyakResep: 0,
+				},
+				leftChildID: elements[start].FromPair[i][0],
+				rightChildID: elements[start].FromPair[i][1],
+			})
+		}
 	}
 
 
@@ -103,6 +110,9 @@ func bfs(start int, needFound int, mult int) *RecipeTreeNode {
 			bfsHelper(current.leftChild)
 		} else {
 			for i := 0 ; i < len(elements[current.leftChildID].FromPair); i++ {
+				if !isValid(current.leftChildID, elements[current.leftChildID].FromPair[i][0], elements[current.leftChildID].FromPair[i][1]) {
+					continue
+				}
 				queue = append(queue, RecipeTreeNodeChild{
 					parent: current.leftChild,
 					leftChild: &RecipeTreeNode{
@@ -125,6 +135,9 @@ func bfs(start int, needFound int, mult int) *RecipeTreeNode {
 			bfsHelper(current.rightChild)
 		} else {
 			for i := 0 ; i < len(elements[current.rightChildID].FromPair); i++ {
+				if !isValid(current.rightChildID, elements[current.rightChildID].FromPair[i][0], elements[current.rightChildID].FromPair[i][1]) {
+					continue
+				}
 				queue = append(queue, RecipeTreeNodeChild{
 					parent: current.rightChild,
 					leftChild: &RecipeTreeNode{
