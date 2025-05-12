@@ -33,9 +33,9 @@ type Element struct {
 var (
 	standardBaseElements     = []string{"Air", "Earth", "Fire", "Water", "Time"}
 	forbiddenIngredientNames = map[string]bool{
-		"Time":         true,
-		"Ruins":        true,
-		"Archeologist": true,
+		// "Time":         true,
+		// "Ruins":        true,
+		// "Archeologist": true,
 	}
 )
 
