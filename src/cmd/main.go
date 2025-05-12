@@ -58,17 +58,32 @@ func main() {
 	//	@Failure		500	{string}	string			"Error if graph data is not ready or invalid"
 	//	@Router			/graph-data [get]
 	r := mux.NewRouter()
+	
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Access-Control-Allow-Origin", "https://tubes2-fe-ian.vercel.app")
+			// Allow specific origins in production
+			origin := r.Header.Get("Origin")
+			allowedOrigins := []string{
+				"https://tubes2-fe-ian.vercel.app",
+				"http://localhost:3000", // for local development
+			}
+			
+			for _, o := range allowedOrigins {
+				if origin == o {
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+					break
+				}
+			}
+			
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			
 			if r.Method == "OPTIONS" {
 				w.WriteHeader(http.StatusOK)
 				return
 			}
-
+			
 			next.ServeHTTP(w, r)
 		})
 	})
