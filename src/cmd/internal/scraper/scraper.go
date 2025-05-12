@@ -367,13 +367,13 @@ func GetProcessedElements() []*Element {
 		tempEl := *el
 
 		tempEl.FromPair = make([][]int, len(el.FromPair))
-		idx := 0
+		// idx := 0
 		for j, pair := range el.FromPair {
-			if isElementValid(processedElementsCache, el.ID, pair[0], pair[1]) { 
-				tempEl.FromPair[j] = make([]int, len(pair))
-				copy(tempEl.FromPair[j], pair)
-				idx++
-			}
+			// if isElementValid(el, processedElementsCache[pair[0]], processedElementsCache[pair[1]]) {
+			tempEl.FromPair[j] = make([]int, len(pair))
+			copy(tempEl.FromPair[j], pair)
+			// idx += 1
+			// }
 		}
 
 		tempEl.CanMake = make([]int, len(el.CanMake))
@@ -384,19 +384,24 @@ func GetProcessedElements() []*Element {
 	return elementsCopy
 }
 
+// func isElementValid(Parent *Element, Child1 *Element, Child2 *Element) bool {
+// 	if Parent.Tier <= Child1.Tier || Parent.Tier <= Child2.Tier {
+// 		// log.Printf("Peringatan: Elemen '%s' (ID: %d) tidak valid untuk anak '%s' (ID: %d) dan '%s' (ID: %d).", Parent.Name, Parent.ID, Child1.Name, Child1.ID, Child2.Name, Child2.ID)
+// 		return true
+// 	}
+// 	//kalau grass, print
+// 	// if Parent.Name == "Grass" || Child1.Name == "Grass" || Child2.Name == "Grass" {
 
-func isElementValid(el []*Element, idParent int, idChild1 int, idChild2 int) bool{
-	if el[idParent].Tier <= el[idChild1].Tier || el[idParent].Tier <= el[idChild2].Tier {
-		return false
-	}
-	if el[idChild1].Name == "Time" || el[idChild2].Name == "Time" {
-		return false
-	}
-	if el[idChild1].Name == "Ruins" || el[idChild2].Name == "Ruins" {
-		return false
-	}
-	if el[idChild1].Name == "Archeologist" || el[idChild2].Name == "Archeologist" {
-		return false
-	}
-	return true
-}
+// 	// 	log.Printf("Elemen '%s' (ID: %d) valid untuk anak '%s' (ID: %d) dan '%s' (ID: %d).", Parent.Name, Parent.ID, Child1.Name, Child1.ID, Child2.Name, Child2.ID)
+// 	// }
+// 	if Child1.Name == "Time" || Child2.Name == "Time" {
+// 		return false
+// 	}
+// 	if Child1.Name == "Ruins" || Child2.Name == "Ruins" {
+// 		return false
+// 	}
+// 	if Child1.Name == "Archeologist" || Child2.Name == "Archeologist" {
+// 		return false
+// 	}
+// 	return true
+// }

@@ -15,6 +15,7 @@ import (
 )
 
 // RecipeSolution represents the solution containing found recipes
+//
 //	@swagger:api
 type RecipeSolution struct {
 	ElementName  string       `json:"elementName"`
@@ -26,6 +27,7 @@ type RecipeSolution struct {
 }
 
 // SearchParams represents the search parameters
+//
 //	@swagger:api
 type SearchParams struct {
 	Algorithm string `json:"algorithm"`
@@ -34,6 +36,7 @@ type SearchParams struct {
 }
 
 // RecipePath represents a single recipe path
+//
 //	@swagger:api
 type RecipePath struct {
 	NamaElemen    string         `json:"namaElemen"`
@@ -78,7 +81,7 @@ func countNodesRecursive(node *algorithm.RecipeTreeNode, visited map[string]bool
 		return 0
 	}
 
-	count := 1 
+	count := 1
 	if visited[node.NamaElemen] {
 		// return 0 // Aktifkan ini jika ingin jumlah elemen *unik* di pohon hasil
 	}
@@ -103,17 +106,17 @@ func NewSolveHandler(nameToID map[string]int, idToName map[int]string) *SolveHan
 	}
 }
 
-//	@Summary		Get recipes for an element
-//	@Description	Finds recipes to create the specified element using either DFS or BFS algorithm
-//	@Tags			recipes
-//	@Accept			json
-//	@Produce		json
-//	@Param			element		query		string				true	"Element name to find recipes for"
-//	@Param			algorithm	query		string				false	"Search algorithm (dfs or bfs)"	Enums(dfs, bfs)	default(dfs)
-//	@Param			count		query		int					false	"Number of recipes to find"		minimum(1)		default(1)
-//	@Param			mode		query		string				false	"Search mode"					default(shortest)
-//	@Success		200			{object}	api.RecipeSolution	"Successful response"
-//	@Router			/solve-recipe [get]
+// @Summary		Get recipes for an element
+// @Description	Finds recipes to create the specified element using either DFS or BFS algorithm
+// @Tags			recipes
+// @Accept			json
+// @Produce		json
+// @Param			element		query		string				true	"Element name to find recipes for"
+// @Param			algorithm	query		string				false	"Search algorithm (dfs or bfs)"	Enums(dfs, bfs)	default(dfs)
+// @Param			count		query		int					false	"Number of recipes to find"		minimum(1)		default(1)
+// @Param			mode		query		string				false	"Search mode"					default(shortest)
+// @Success		200			{object}	api.RecipeSolution	"Successful response"
+// @Router			/solve-recipe [get]
 func (sh *SolveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	queryParams := r.URL.Query()
 	elementNameQuery := strings.TrimSpace(queryParams.Get("element"))
@@ -171,7 +174,7 @@ func (sh *SolveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if algo == "dfs" {
 		log.Printf("Calling DFS for element ID %d (%s), needFound: %d", startID, elementNameForOutput, recipeCount)
 		// resultTree = algorithm.Dfs(startID, recipeCount, multParam)
-		resultTree = algorithm.ParallelDFS(startID, recipeCount, 1)
+		resultTree = algorithm.ParallelDFS(startID, recipeCount, 2)
 		// nodesVisitedByAlgo = hasilDariDFS.NodesExplored // contoh
 	} else { // bfs
 		log.Printf("Calling BFS for element ID %d (%s), needFound: %d", startID, elementNameForOutput, recipeCount)
