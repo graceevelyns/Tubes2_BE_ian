@@ -367,9 +367,13 @@ func GetProcessedElements() []*Element {
 		tempEl := *el
 
 		tempEl.FromPair = make([][]int, len(el.FromPair))
+		idx := 0
 		for j, pair := range el.FromPair {
-			tempEl.FromPair[j] = make([]int, len(pair))
-			copy(tempEl.FromPair[j], pair)
+			if isElementValid(processedElementsCache, el.ID, pair[0], pair[1]) { 
+				tempEl.FromPair[j] = make([]int, len(pair))
+				copy(tempEl.FromPair[j], pair)
+				idx++
+			}
 		}
 
 		tempEl.CanMake = make([]int, len(el.CanMake))
@@ -378,4 +382,21 @@ func GetProcessedElements() []*Element {
 		elementsCopy[i] = &tempEl
 	}
 	return elementsCopy
+}
+
+
+func isElementValid(el []*Element, idParent int, idChild1 int, idChild2 int) bool{
+	if el[idParent].Tier <= el[idChild1].Tier || el[idParent].Tier <= el[idChild2].Tier {
+		return false
+	}
+	if el[idChild1].Name == "Time" || el[idChild2].Name == "Time" {
+		return false
+	}
+	if el[idChild1].Name == "Ruins" || el[idChild2].Name == "Ruins" {
+		return false
+	}
+	if el[idChild1].Name == "Archeologist" || el[idChild2].Name == "Archeologist" {
+		return false
+	}
+	return true
 }
