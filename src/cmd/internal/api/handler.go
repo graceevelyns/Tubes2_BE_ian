@@ -82,9 +82,6 @@ func countNodesRecursive(node *algorithm.RecipeTreeNode, visited map[string]bool
 	}
 
 	count := 1
-	if visited[node.NamaElemen] {
-		// return 0 // Aktifkan ini jika ingin jumlah elemen *unik* di pohon hasil
-	}
 	visited[node.NamaElemen] = true
 
 	for _, childPair := range node.DibuatDari {
@@ -178,7 +175,6 @@ func (sh *SolveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		} else {
 			resultTree = algorithm.ParallelDFS(startID, recipeCount, 2)
 		}
-		// nodesVisitedByAlgo = hasilDariDFS.NodesExplored // contoh
 	} else { // bfs
 		log.Printf("Calling BFS for element ID %d (%s), needFound: %d", startID, elementNameForOutput, recipeCount)
 		if recipeCount == 1 {
@@ -186,7 +182,6 @@ func (sh *SolveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		} else {
 			resultTree = algorithm.ParallelBfs(startID, recipeCount, 2)
 		}
-		// nodesVisitedByAlgo = hasilDariBFS.NodesExplored // contoh
 	}
 
 	searchTimeMs := float64(time.Since(startTime).Microseconds()) / 1000.0
@@ -229,7 +224,7 @@ func (sh *SolveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		SearchParams: SearchParams{Algorithm: algo, Count: recipeCount, Mode: mode},
 		Found:        true,
 		SearchTimeMs: searchTimeMs,
-		NodesVisited: finalNodesVisited, // Gunakan nilai yang sudah ditentukan
+		NodesVisited: finalNodesVisited,
 		Recipes:      recipePaths,
 	}
 
