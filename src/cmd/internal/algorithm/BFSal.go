@@ -4,7 +4,7 @@ import (
 	"fmt" // Tambahkan untuk formatting log
 	"log"
 
-	"github.com/graceevelyns/Tubes2_BE_ian/src/internal/scraper"
+	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/internal/scraper"
 )
 
 // Variabel global 'elements' dari file lain di package ini

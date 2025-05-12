@@ -9,6 +9,9 @@ http://localhost:8080/graph-data
 endpoint hasil dapat diakses di:
 http://localhost:8080/api/recipes/{nama_item_yang_mau_dicari_resepnya}?algorithm=...
 
+swagger dapat diakses di:
+http://localhost:8080/swagger/index.html
+
 untuk melihat secara rapi:
 centang pilihan pretty-print di kiri atas
 
