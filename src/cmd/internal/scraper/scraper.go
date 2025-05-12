@@ -467,6 +467,7 @@ func FetchAndProcessData() ([]*Element, error) {
 		isBase := isStandardBaseElement(el.Name)
 		hasValidRecipes := len(el.FromPair) > 0
 
+
 		if isBase {
 			finalFilteredElements = append(finalFilteredElements, el)
 		} else if hasValidRecipes && el.Tier != -1 {
