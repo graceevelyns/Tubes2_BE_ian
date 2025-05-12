@@ -173,12 +173,19 @@ func (sh *SolveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if algo == "dfs" {
 		log.Printf("Calling DFS for element ID %d (%s), needFound: %d", startID, elementNameForOutput, recipeCount)
-		// resultTree = algorithm.Dfs(startID, recipeCount, multParam)
-		resultTree = algorithm.ParallelDFS(startID, recipeCount, 2)
+		if recipeCount == 1 {
+			resultTree = algorithm.Dfs(startID, recipeCount, multParam)
+		} else {
+			resultTree = algorithm.ParallelDFS(startID, recipeCount, 2)
+		}
 		// nodesVisitedByAlgo = hasilDariDFS.NodesExplored // contoh
 	} else { // bfs
 		log.Printf("Calling BFS for element ID %d (%s), needFound: %d", startID, elementNameForOutput, recipeCount)
-		resultTree = algorithm.Bfs(startID, recipeCount, multParam)
+		if recipeCount == 1 {
+			resultTree = algorithm.Bfs(startID, recipeCount, multParam)
+		} else {
+			resultTree = algorithm.ParallelBfs(startID, recipeCount, 2)
+		}
 		// nodesVisitedByAlgo = hasilDariBFS.NodesExplored // contoh
 	}
 

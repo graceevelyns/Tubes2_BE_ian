@@ -3,6 +3,8 @@ package algorithm
 import (
 	"fmt" // Tambahkan untuk formatting log
 	// "log"
+	"sync"
+	"sync/atomic"
 
 	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/internal/scraper"
 )
@@ -282,8 +284,7 @@ func Bfs(start int, needFound int, mult int) *RecipeTreeNode {
 			}
 
 			// 2. Buat RecipeTreeNodeChild
-			var childRelation RecipeTreeNodeChild
-			childRelation = RecipeTreeNodeChild{
+			var childRelation  = RecipeTreeNodeChild{
 				Parent:       &Tree,
 				LeftChild:    tempLeftChildNode,
 				RightChild:   tempRightChildNode,
@@ -364,8 +365,7 @@ func Bfs(start int, needFound int, mult int) *RecipeTreeNode {
 						tempGrandLeftNode := &RecipeTreeNode{NamaElemen: elements[grandLeftID_fromPair].Name, DibuatDari: make([]RecipeTreeNodeChild, 0)}
 						tempGrandRightNode := &RecipeTreeNode{NamaElemen: elements[grandRightID_fromPair].Name, DibuatDari: make([]RecipeTreeNodeChild, 0)}
 
-						var newChildRelation RecipeTreeNodeChild
-						newChildRelation = RecipeTreeNodeChild{
+						var newChildRelation = RecipeTreeNodeChild{
 							Parent:       expandingParentNode, // Parent-nya adalah current.LeftChild
 							LeftChild:    tempGrandLeftNode,
 							RightChild:   tempGrandRightNode,
@@ -426,8 +426,7 @@ func Bfs(start int, needFound int, mult int) *RecipeTreeNode {
 						tempGrandLeftNode := &RecipeTreeNode{NamaElemen: elements[grandLeftID_fromPair].Name, DibuatDari: make([]RecipeTreeNodeChild, 0)}
 						tempGrandRightNode := &RecipeTreeNode{NamaElemen: elements[grandRightID_fromPair].Name, DibuatDari: make([]RecipeTreeNodeChild, 0)}
 
-						var newChildRelation RecipeTreeNodeChild
-						newChildRelation = RecipeTreeNodeChild{
+						var newChildRelation  = RecipeTreeNodeChild{
 							Parent:       expandingParentNode,
 							LeftChild:    tempGrandLeftNode,
 							RightChild:   tempGrandRightNode,
@@ -492,4 +491,103 @@ func BFSCleaner(tree *RecipeTreeNode) *RecipeTreeNode {
 	}
 
 	return newTree
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+func ParallelBfs(targetID, needCount int, maxGoroutine int) *RecipeTreeNode {
+	type QueueItem struct {
+		ID   int
+		Node *RecipeTreeNode
+	}
+
+	root := &RecipeTreeNode{
+		NamaElemen:  elements[targetID].Name,
+		DibuatDari:  []RecipeTreeNodeChild{},
+		BanyakResep: 0,
+	}
+
+	queue := []QueueItem{{ID: targetID, Node: root}}
+	sema := make(chan struct{}, maxGoroutine)
+	var resepCount int32 = 0
+	var queueMu sync.Mutex
+
+	for len(queue) > 0 && atomic.LoadInt32(&resepCount) < int32(needCount) {
+		queueMu.Lock()
+		item := queue[0]
+		queue = queue[1:]
+		queueMu.Unlock()
+
+		target := elements[item.ID]
+		var wg sync.WaitGroup
+		var childMu sync.Mutex
+
+		for _, pair := range target.FromPair {
+			// Early stop sebelum memulai goroutine baru
+			if atomic.LoadInt32(&resepCount) >= int32(needCount) {
+				break
+			}
+
+			wg.Add(1)
+			sema <- struct{}{}
+
+			go func(p [2]int) {
+				defer wg.Done()
+				defer func() { <-sema }()
+
+				// Recheck early stop
+				if atomic.LoadInt32(&resepCount) >= int32(needCount) {
+					return
+				}
+
+				left := Dfs(p[0], needCount, 1)
+				right := Dfs(p[1], needCount, 1)
+
+				if left != nil && right != nil &&
+					left.BanyakResep > 0 && right.BanyakResep > 0 {
+
+					child := RecipeTreeNodeChild{
+						LeftChild:    left,
+						RightChild:   right,
+						LeftChildID:  p[0],
+						RightChildID: p[1],
+					}
+
+					childMu.Lock()
+					item.Node.DibuatDari = append(item.Node.DibuatDari, child)
+					item.Node.BanyakResep += right.BanyakResep
+					atomic.AddInt32(&resepCount, int32(right.BanyakResep))
+					childMu.Unlock()
+
+					// Masukkan ke queue kalau masih bisa lanjut
+					queueMu.Lock()
+					queue = append(queue, QueueItem{ID: p[0], Node: left})
+					queue = append(queue, QueueItem{ID: p[1], Node: right})
+					queueMu.Unlock()
+				}
+			}([2]int{pair[0], pair[1]})
+		}
+		wg.Wait()
+	}
+
+	// if atomic.LoadInt32(&resepCount) > 0 {
+	root.BanyakResep = int(atomic.LoadInt32(&resepCount))
+	return root
+	// }
+	// return nil
 }
