@@ -5,14 +5,16 @@ import (
 	"log"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/internal/model"
 )
 
-const targetURL = "https://little-alchemy.fandom.com/wiki/Elements_(Little_Alchemy_2)"
+const (
+	targetURL = "https://little-alchemy.fandom.com/wiki/Elements_(Little_Alchemy_2)"
+)
 
 type RawRecipeEntry struct {
 	ResultElement string
@@ -21,21 +23,29 @@ type RawRecipeEntry struct {
 }
 
 type Element struct {
-	ID       int     `json:"Id"`
-	Name     string  `json:"Name"`
-	Tier     int     `json:"Tier"`
-	FromPair [][]int `json:"FromPair"`
-	CanMake  []int   `json:"CanMake"`
+	ID       int     `json:"Id"`       // unique identifier for the element
+	Name     string  `json:"Name"`     // name of the element
+	Tier     int     `json:"Tier"`     // tier of the element, 0 for base elements
+	FromPair [][]int `json:"FromPair"` // list of ingredient ID pairs that can create this element
+	CanMake  []int   `json:"CanMake"`  // list of element IDs that can be made using this element as an ingredient
 }
 
 var (
-	standardBaseElements   = []string{"Air", "Earth", "Fire", "Water", "Time"}
-	processedElementsCache []*Element
-	cacheMutex             sync.RWMutex
+	standardBaseElements     = []string{"Air", "Earth", "Fire", "Water", "Time"}
+	forbiddenIngredientNames = map[string]bool{
+		"Time":         true,
+		"Ruins":        true,
+		"Archeologist": true,
+	}
 )
 
+func normalizeElementName(name string) string {
+	return strings.Title(strings.ToLower(strings.TrimSpace(name)))
+}
+
+// isStandardBaseElement checks if the given element name is one of the standard base elements
 func isStandardBaseElement(name string) bool {
-	normalizedName := strings.Title(strings.ToLower(name))
+	normalizedName := normalizeElementName(name)
 	for _, baseName := range standardBaseElements {
 		if normalizedName == baseName {
 			return true
@@ -44,32 +54,148 @@ func isStandardBaseElement(name string) bool {
 	return false
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
+func isRecipeValidInternal(ing1ID int, ing2ID int, resultID int, elementMapByID map[int]*Element) bool {
+	ing1Elem, ok1 := elementMapByID[ing1ID]
+	ing2Elem, ok2 := elementMapByID[ing2ID]
+	resultElem, okResult := elementMapByID[resultID]
+
+	if !ok1 || !ok2 || !okResult {
+		return false
 	}
-	return b
+
+	if forbiddenIngredientNames[ing1Elem.Name] {
+		return false
+	}
+	if forbiddenIngredientNames[ing2Elem.Name] {
+		return false
+	}
+
+	// check if tier is valid (not -1, which indicates an unprocessed or invalid tier)
+	if ing1Elem.Tier == -1 || ing2Elem.Tier == -1 || resultElem.Tier == -1 {
+		return false
+	}
+
+	return true
 }
 
-func FetchAndProcessData() ([]*Element, error) {
-	log.Println("Memulai proses scraping dari:", targetURL)
-
-	res, err := http.Get(targetURL)
+func fetchDocument(url string) (*goquery.Document, error) {
+	res, err := http.Get(url)
 	if err != nil {
-		return nil, fmt.Errorf("gagal GET request ke %s: %w", targetURL, err)
+		return nil, fmt.Errorf("failed GET request to %s: %w", url, err)
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode != 200 {
-		return nil, fmt.Errorf("status code tidak OK: %d %s", res.StatusCode, res.Status)
+		return nil, fmt.Errorf("status code not OK: %d %s", res.StatusCode, res.Status)
 	}
 
 	doc, err := goquery.NewDocumentFromReader(res.Body)
 	if err != nil {
-		return nil, fmt.Errorf("gagal mem-parse HTML: %w", err)
+		return nil, fmt.Errorf("failed to parse HTML: %w", err)
+	}
+	return doc, nil
+}
+
+func extractElementTiers(doc *goquery.Document) map[string]int {
+	elementTiers := make(map[string]int)
+	for _, baseName := range standardBaseElements {
+		elementTiers[normalizeElementName(baseName)] = 0 // base elements are tier 0
 	}
 
-	log.Println("HTML berhasil di-parse. Memulai ekstraksi data...")
+	doc.Find("div.mw-parser-output > h2, div.mw-parser-output > h3").Each(func(_ int, headingSel *goquery.Selection) {
+		headlineSpan := headingSel.Find("span.mw-headline")
+		if headlineSpan.Length() == 0 {
+			return
+		}
+		headlineID, idExists := headlineSpan.Attr("id")
+		if !idExists {
+			return
+		}
+
+		currentTierNum := -1
+		if strings.HasPrefix(headlineID, "Tier_") && strings.HasSuffix(headlineID, "_elements") {
+			tierStr := strings.TrimSuffix(strings.TrimPrefix(headlineID, "Tier_"), "_elements")
+			if val, errConv := strconv.Atoi(tierStr); errConv == nil {
+				currentTierNum = val
+			}
+		} else if headlineID == "Starting_elements" {
+			currentTierNum = 0
+		}
+
+		if currentTierNum != -1 {
+			node := headingSel.Next()
+			foundTableForThisTier := false
+			for node.Length() > 0 && !foundTableForThisTier {
+				if node.Is("h2, h3") { // stop if hit the next tier heading
+					break
+				}
+				var tableToProcess *goquery.Selection
+				if node.Is("table.list-table") {
+					tableToProcess = node
+				} else if node.Is("div") {
+					tableToProcess = node.Find("table.list-table").First()
+				}
+
+				if tableToProcess != nil && tableToProcess.Length() > 0 {
+					foundTableForThisTier = true
+					tableToProcess.Find("tbody tr").Each(func(i int, rowSelection *goquery.Selection) {
+						tds := rowSelection.Find("td")
+						if tds.Length() < 1 {
+							return
+						}
+
+						// attempt to get element name from the first link
+						resultElementNode := tds.Eq(0).Find("a[href^='/wiki/']").First()
+						resultElementName := strings.TrimSpace(resultElementNode.Text())
+
+						// fallback if no link or link text is empty
+						if resultElementName == "" {
+							clonedTd := tds.Eq(0).Clone()
+							clonedTd.Find("span, script, style, sup, br, img, a.image, div.gallerytext").Remove()
+							resultElementName = strings.TrimSpace(clonedTd.Text())
+							if strings.Contains(resultElementName, "\n") {
+								resultElementName = strings.TrimSpace(strings.Split(resultElementName, "\n")[0])
+							}
+						}
+						resultElementName = normalizeElementName(resultElementName)
+
+						if resultElementName != "" {
+							isFilteredOut := false
+							tds.Eq(0).Find("a[title*='Myths and Monsters Pack'], img[alt*='Myths and Monsters Pack'], span[class*='pack-icon']").EachWithBreak(func(_ int, s *goquery.Selection) bool {
+								if !isStandardBaseElement(resultElementName) {
+									isFilteredOut = true
+									return false
+								}
+								return true
+							})
+							if isFilteredOut {
+								return
+							}
+							if tds.Length() > 1 {
+								if tds.Eq(1).Find("a[href='/wiki/Elements_(Myths_and_Monsters)']").Length() > 0 {
+									isFilteredOut = true
+								}
+							}
+							if isFilteredOut {
+								return
+							}
+
+							// assign tier if not already assigned or if previous assignment was placeholder (-1)
+							if _, exists := elementTiers[resultElementName]; !exists || elementTiers[resultElementName] == -1 {
+								elementTiers[resultElementName] = currentTierNum
+							}
+						}
+					})
+				}
+				node = node.Next()
+			}
+		}
+	})
+	return elementTiers
+}
+
+// extractRawRecipesAndElements scrapes recipes and a list of valid element names from the document
+func extractRawRecipesAndElements(doc *goquery.Document) ([]RawRecipeEntry, map[string]bool, []string) {
 	var rawRecipes []RawRecipeEntry
 	validResultElementsFromPage := make(map[string]bool)
 	var tempOrderedResultNames []string
@@ -81,10 +207,13 @@ func FetchAndProcessData() ([]*Element, error) {
 			return
 		}
 
+		// extract result element name (similar logic to tier extraction)
 		resultElementNode := tds.Eq(0).Find("a[href^='/wiki/']").First()
 		resultElementName := strings.TrimSpace(resultElementNode.Text())
 		if resultElementName == "" {
-			resultElementName = strings.TrimSpace(tds.Eq(0).Contents().Not("span, script, style").Text())
+			clonedTd := tds.Eq(0).Clone()
+			clonedTd.Find("span, script, style, sup, br, img, a.image, div.gallerytext").Remove()
+			resultElementName = strings.TrimSpace(clonedTd.Text())
 			if strings.Contains(resultElementName, "\n") {
 				resultElementName = strings.TrimSpace(strings.Split(resultElementName, "\n")[0])
 			}
@@ -92,19 +221,17 @@ func FetchAndProcessData() ([]*Element, error) {
 		if resultElementName == "" {
 			return
 		}
-		resultElementName = strings.Title(strings.ToLower(resultElementName))
+		resultElementName = normalizeElementName(resultElementName)
 
+		// filter out elements from specific packs
 		if tds.Length() > 1 {
-			mythLink := tds.Eq(1).Find("a[href='/wiki/Elements_(Myths_and_Monsters)']")
-			if mythLink.Length() > 0 {
-				log.Printf("FILTER (MYTHS LINK): Melewati elemen '%s'.", resultElementName)
+			if tds.Eq(1).Find("a[href='/wiki/Elements_(Myths_and_Monsters)']").Length() > 0 {
 				return
 			}
 		}
 		var isVisuallyMarkedAsPack = false
 		tds.Eq(0).Find("a[title*='Myths and Monsters Pack'], img[alt*='Myths and Monsters Pack'], span[class*='pack-icon']").Each(func(_ int, s *goquery.Selection) {
 			if !isStandardBaseElement(resultElementName) {
-				log.Printf("FILTER (VISUAL PACK): Melewati elemen '%s'.", resultElementName)
 				isVisuallyMarkedAsPack = true
 			}
 		})
@@ -121,9 +248,9 @@ func FetchAndProcessData() ([]*Element, error) {
 		if tds.Length() > 1 {
 			tds.Eq(1).Find("ul > li").Each(func(j int, recipeLi *goquery.Selection) {
 				ingredientLinks := recipeLi.Find("a[href^='/wiki/']")
-				if ingredientLinks.Length() >= 2 {
-					ing1 := strings.Title(strings.ToLower(strings.TrimSpace(ingredientLinks.Eq(0).Text()))) // Normalisasi
-					ing2 := strings.Title(strings.ToLower(strings.TrimSpace(ingredientLinks.Eq(1).Text()))) // Normalisasi
+				if ingredientLinks.Length() >= 2 { // a recipe needs at least two ingredients
+					ing1 := normalizeElementName(ingredientLinks.Eq(0).Text())
+					ing2 := normalizeElementName(ingredientLinks.Eq(1).Text())
 					if ing1 != "" && ing2 != "" {
 						sortedIng := []string{ing1, ing2}
 						sort.Strings(sortedIng)
@@ -133,61 +260,52 @@ func FetchAndProcessData() ([]*Element, error) {
 			})
 		}
 	})
-	log.Printf("Scraping mentah selesai. %d elemen hasil unik potensial. %d entri resep potensial.", len(tempOrderedResultNames), len(rawRecipes))
 
+	// filter rawRecipes to ensure their result elements are considered valid
 	var finalRawRecipes []RawRecipeEntry
 	for _, rr := range rawRecipes {
 		if validResultElementsFromPage[rr.ResultElement] {
 			finalRawRecipes = append(finalRawRecipes, rr)
-		} else {
-			log.Printf("FILTER (RAW RECIPE): Membuang resep dengan hasil '%s'.", rr.ResultElement)
 		}
 	}
-	rawRecipes = finalRawRecipes
-	log.Printf("Setelah filter rawRecipes, tersisa %d entri resep.", len(rawRecipes))
+	return finalRawRecipes, validResultElementsFromPage, tempOrderedResultNames
+}
 
+// buildRecipeTreeNodes constructs an initial graph-like structure of elements and their recipes
+func buildRecipeTreeNodes(rawRecipes []RawRecipeEntry, allElementNamesOnPage []string) map[string]*model.RecipeTreeNodeTier {
 	allNodes := make(map[string]*model.RecipeTreeNodeTier)
-	var finalOrderedNodeKeys []string
-	for _, name := range tempOrderedResultNames {
-		allNodes[name] = &model.RecipeTreeNodeTier{NamaElemen: name, DibuatDari: make([][2]*model.RecipeTreeNodeTier, 0)}
-		finalOrderedNodeKeys = append(finalOrderedNodeKeys, name)
-	}
-	tempIsNameInFinalOrderedList := make(map[string]bool)
-	for _, name := range finalOrderedNodeKeys {
-		tempIsNameInFinalOrderedList[name] = true
+
+	// ensure all unique element names from page (and base elements) have a node
+	elementNameSet := make(map[string]bool)
+	for _, name := range allElementNamesOnPage {
+		if _, exists := allNodes[name]; !exists {
+			allNodes[name] = &model.RecipeTreeNodeTier{NamaElemen: name}
+		}
+		elementNameSet[name] = true
 	}
 	for _, baseName := range standardBaseElements {
-		normBaseName := strings.Title(strings.ToLower(baseName))
+		normBaseName := normalizeElementName(baseName)
 		if _, exists := allNodes[normBaseName]; !exists {
-			log.Printf("Info: Elemen dasar '%s' dibuat manual.", normBaseName)
-			allNodes[normBaseName] = &model.RecipeTreeNodeTier{NamaElemen: normBaseName, DibuatDari: make([][2]*model.RecipeTreeNodeTier, 0)}
-			if !tempIsNameInFinalOrderedList[normBaseName] {
-				finalOrderedNodeKeys = append(finalOrderedNodeKeys, normBaseName)
-			}
+			allNodes[normBaseName] = &model.RecipeTreeNodeTier{NamaElemen: normBaseName}
 		}
+		elementNameSet[normBaseName] = true
 	}
-	uniqueKeysMap := make(map[string]bool)
-	var cleanedKeys []string
-	for _, k := range finalOrderedNodeKeys {
-		if !uniqueKeysMap[k] {
-			uniqueKeysMap[k] = true
-			cleanedKeys = append(cleanedKeys, k)
-		}
-	}
-	finalOrderedNodeKeys = cleanedKeys
-	log.Printf("Node awal dibuat. %d node unik. %d kunci terurut final.", len(allNodes), len(finalOrderedNodeKeys))
 
+	// populate the DibuatDari field for each node
 	for _, rr := range rawRecipes {
 		resNode, rExists := allNodes[rr.ResultElement]
-		if !rExists || isStandardBaseElement(resNode.NamaElemen) {
-			continue
-		}
 		ing1Node, i1Exists := allNodes[rr.Ingredient1]
 		ing2Node, i2Exists := allNodes[rr.Ingredient2]
-		if i1Exists && i2Exists {
+
+		if rExists && i1Exists && i2Exists {
+			if isStandardBaseElement(resNode.NamaElemen) { // base elements are not made from anything
+				continue
+			}
+			// check if this combination already exists to avoid duplicates
 			comboExists := false
 			for _, combo := range resNode.DibuatDari {
-				if combo[0].NamaElemen == rr.Ingredient1 && combo[1].NamaElemen == rr.Ingredient2 {
+				if (combo[0].NamaElemen == rr.Ingredient1 && combo[1].NamaElemen == rr.Ingredient2) ||
+					(combo[0].NamaElemen == rr.Ingredient2 && combo[1].NamaElemen == rr.Ingredient1) {
 					comboExists = true
 					break
 				}
@@ -195,135 +313,127 @@ func FetchAndProcessData() ([]*Element, error) {
 			if !comboExists {
 				resNode.DibuatDari = append(resNode.DibuatDari, [2]*model.RecipeTreeNodeTier{ing1Node, ing2Node})
 			}
-		} else {
-			if !i1Exists {
-				log.Printf("Peringatan (Node Build): Bahan '%s' untuk '%s' tidak ada.", rr.Ingredient1, rr.ResultElement)
-			}
-			if !i2Exists {
-				log.Printf("Peringatan (Node Build): Bahan '%s' untuk '%s' tidak ada.", rr.Ingredient2, rr.ResultElement)
-			}
 		}
 	}
-	log.Printf("Struktur RecipeTreeNodeTier selesai. Total node: %d.", len(allNodes))
+	return allNodes
+}
+
+// assignIDsAndCreateElements sorts elements, assigns them unique IDs, and creates the final Element structs
+func assignIDsAndCreateElements(allNodes map[string]*model.RecipeTreeNodeTier, elementTiersFromWeb map[string]int, allElementNamesFromExtraction []string) ([]*Element, map[string]int, map[int]*Element) {
+	type elementInfoForIDSorter struct {
+		Name string
+		Tier int
+	}
+
+	var elementsForIDSorting []elementInfoForIDSorter
+
+	uniqueElementNames := make(map[string]bool)
+	for _, name := range allElementNamesFromExtraction {
+		uniqueElementNames[name] = true
+	}
+
+	for _, baseName := range standardBaseElements {
+		uniqueElementNames[normalizeElementName(baseName)] = true
+	}
+
+	for name := range uniqueElementNames {
+		currentTier := -1 // default to unassigned tier
+		if isStandardBaseElement(name) {
+			currentTier = 0
+		} else if tier, found := elementTiersFromWeb[name]; found {
+			currentTier = tier
+		}
+		elementsForIDSorting = append(elementsForIDSorting, elementInfoForIDSorter{Name: name, Tier: currentTier})
+	}
+
+	sort.Slice(elementsForIDSorting, func(i, j int) bool {
+		elI := elementsForIDSorting[i]
+		elJ := elementsForIDSorting[j]
+		if elI.Tier != elJ.Tier {
+			if elI.Tier == -1 {
+				return false
+			}
+			if elJ.Tier == -1 {
+				return true
+			}
+			return elI.Tier < elJ.Tier
+		}
+		return elI.Name < elJ.Name
+	})
 
 	nameToID := make(map[string]int)
 	elementMapByID := make(map[int]*Element)
 	var orderedElements []*Element
+	currentIDCounter := 0
 
-	nextID := 0
-	for _, name := range finalOrderedNodeKeys {
-		if _, nodeExists := allNodes[name]; nodeExists {
-			currentID := nextID
-			nameToID[name] = currentID
-			el := &Element{
-				ID: currentID, Name: name, Tier: -1,
-				FromPair: make([][]int, 0), CanMake: make([]int, 0),
-			}
-			elementMapByID[currentID] = el
-			orderedElements = append(orderedElements, el)
-			nextID++
+	for _, sortedElInfo := range elementsForIDSorting {
+		el := &Element{
+			ID:       currentIDCounter,
+			Name:     sortedElInfo.Name,
+			Tier:     sortedElInfo.Tier,
+			FromPair: make([][]int, 0),
+			CanMake:  make([]int, 0),
 		}
+		nameToID[el.Name] = el.ID
+		elementMapByID[el.ID] = el
+		orderedElements = append(orderedElements, el)
+		currentIDCounter++
 	}
-	log.Printf("Penetapan ID selesai. %d elemen mendapatkan ID.", len(orderedElements))
-	if len(orderedElements) != len(allNodes) {
-		log.Printf("PERINGATAN (ID Assign): Jumlah elemen dengan ID (%d) tidak sama dengan jumlah node di allNodes (%d).", len(orderedElements), len(allNodes))
-	}
+	return orderedElements, nameToID, elementMapByID
+}
 
-	// kalkulasi tier
-	elementTiersByName := make(map[string]int)
-	for name := range allNodes {
-		elementTiersByName[name] = -1
-	}
-	for name := range allNodes {
-		if isStandardBaseElement(name) {
-			elementTiersByName[name] = 0
-		}
-	}
-	maxIter := len(allNodes) + 5
-	for i := 0; i < maxIter; i++ {
-		changed := false
-		for elName, node := range allNodes {
-			if tier, _ := elementTiersByName[elName]; tier == 0 {
-				continue
-			}
-			minTier := -1
-			if (node.DibuatDari == nil || len(node.DibuatDari) == 0) && !isStandardBaseElement(elName) {
-				continue
-			}
-			for _, pair := range node.DibuatDari {
-				if pair[0] == nil || pair[1] == nil {
-					continue
-				}
-				t1, ok1 := elementTiersByName[pair[0].NamaElemen]
-				t2, ok2 := elementTiersByName[pair[1].NamaElemen]
-				if ok1 && t1 != -1 && ok2 && t2 != -1 {
-					calcTier := 1 + max(t1, t2)
-					if minTier == -1 || calcTier < minTier {
-						minTier = calcTier
-					}
-				}
-			}
-			if minTier != -1 {
-				curTier, _ := elementTiersByName[elName]
-				if curTier == -1 || minTier < curTier {
-					elementTiersByName[elName] = minTier
-					changed = true
-				}
-			}
-		}
-		if !changed {
-			log.Printf("Kalkulasi tier konvergen iterasi %d.", i+1)
-			break
-		}
-		if i == maxIter-1 {
-			log.Println("Peringatan: Kalkulasi tier mencapai max iterasi.")
-		}
-	}
-	for _, el := range orderedElements {
-		if tier, ok := elementTiersByName[el.Name]; ok {
-			el.Tier = tier
-		} else {
-			el.Tier = -1
-			log.Printf("Peringatan (Tier Assign): Tier untuk '%s' tidak ditemukan.", el.Name)
-		}
-	}
-	log.Println("Kalkulasi tier selesai.")
-
+func populateElementRelationships(orderedElements []*Element, allNodes map[string]*model.RecipeTreeNodeTier, nameToID map[string]int, elementMapByID map[int]*Element) {
 	canMakeTemp := make(map[int]map[int]bool)
+
 	for _, currentElement := range orderedElements {
 		resultNode, nodeExists := allNodes[currentElement.Name]
-		if !nodeExists || isStandardBaseElement(currentElement.Name) || resultNode.DibuatDari == nil {
+		if !nodeExists || isStandardBaseElement(currentElement.Name) || resultNode.DibuatDari == nil || len(resultNode.DibuatDari) == 0 {
 			continue
 		}
-		processedPairs := make(map[string]bool)
-		for _, recipe := range resultNode.DibuatDari {
-			ing1Name := recipe[0].NamaElemen
-			ing2Name := recipe[1].NamaElemen
-			ing1ID, ok1 := nameToID[ing1Name]
-			ing2ID, ok2 := nameToID[ing2Name]
+
+		tempValidFromPairs := [][]int{}
+		processedIngredientPairKeys := make(map[string]bool)
+
+		for _, recipePairNodes := range resultNode.DibuatDari {
+			ing1Node := recipePairNodes[0]
+			ing2Node := recipePairNodes[1]
+			if ing1Node == nil || ing2Node == nil {
+				continue
+			}
+
+			ing1ID, ok1 := nameToID[ing1Node.NamaElemen]
+			ing2ID, ok2 := nameToID[ing2Node.NamaElemen]
+
 			if ok1 && ok2 {
-				pairIDs := []int{ing1ID, ing2ID}
-				if pairIDs[0] > pairIDs[1] {
-					pairIDs[0], pairIDs[1] = pairIDs[1], pairIDs[0]
+				currentPairIDs := []int{ing1ID, ing2ID}
+				if currentPairIDs[0] > currentPairIDs[1] {
+					currentPairIDs[0], currentPairIDs[1] = currentPairIDs[1], currentPairIDs[0]
 				}
-				pairKey := fmt.Sprintf("%d-%d", pairIDs[0], pairIDs[1])
-				if !processedPairs[pairKey] {
-					currentElement.FromPair = append(currentElement.FromPair, pairIDs)
-					processedPairs[pairKey] = true
-				}
-				if _, exists := canMakeTemp[ing1ID]; !exists {
-					canMakeTemp[ing1ID] = make(map[int]bool)
-				}
-				canMakeTemp[ing1ID][currentElement.ID] = true
-				if ing1ID != ing2ID {
-					if _, exists := canMakeTemp[ing2ID]; !exists {
-						canMakeTemp[ing2ID] = make(map[int]bool)
+				pairKey := fmt.Sprintf("%d-%d", currentPairIDs[0], currentPairIDs[1])
+
+				if !processedIngredientPairKeys[pairKey] {
+					processedIngredientPairKeys[pairKey] = true
+					if isRecipeValidInternal(ing1ID, ing2ID, currentElement.ID, elementMapByID) {
+						tempValidFromPairs = append(tempValidFromPairs, currentPairIDs)
+
+						if _, exists := canMakeTemp[ing1ID]; !exists {
+							canMakeTemp[ing1ID] = make(map[int]bool)
+						}
+						canMakeTemp[ing1ID][currentElement.ID] = true
+
+						if ing1ID != ing2ID {
+							if _, exists := canMakeTemp[ing2ID]; !exists {
+								canMakeTemp[ing2ID] = make(map[int]bool)
+							}
+							canMakeTemp[ing2ID][currentElement.ID] = true
+						}
 					}
-					canMakeTemp[ing2ID][currentElement.ID] = true
 				}
 			}
 		}
+		currentElement.FromPair = tempValidFromPairs
 	}
+
 	for ingID, producesMap := range canMakeTemp {
 		if ingElement, ok := elementMapByID[ingID]; ok {
 			for prodID := range producesMap {
@@ -332,71 +442,47 @@ func FetchAndProcessData() ([]*Element, error) {
 			sort.Ints(ingElement.CanMake)
 		}
 	}
-	log.Println("Populasi FromPair dan CanMake selesai.")
+}
+
+func FetchAndProcessData() ([]*Element, error) {
+	log.Println("starting scraping process from:", targetURL)
+
+	doc, err := fetchDocument(targetURL)
+	if err != nil {
+		return nil, err
+	}
+
+	elementTiersFromWeb := extractElementTiers(doc)
+
+	rawRecipes, _, tempOrderedResultNames := extractRawRecipesAndElements(doc)
+
+	allNodes := buildRecipeTreeNodes(rawRecipes, tempOrderedResultNames)
+
+	orderedElements, nameToID, elementMapByID := assignIDsAndCreateElements(allNodes, elementTiersFromWeb, tempOrderedResultNames)
+
+	populateElementRelationships(orderedElements, allNodes, nameToID, elementMapByID)
 
 	var finalFilteredElements []*Element
 	for _, el := range orderedElements {
 		isBase := isStandardBaseElement(el.Name)
 		hasValidRecipes := len(el.FromPair) > 0
-		if isBase || (hasValidRecipes && el.Tier != -1) {
+
+		if isBase {
+			finalFilteredElements = append(finalFilteredElements, el)
+		} else if hasValidRecipes && el.Tier != -1 {
 			finalFilteredElements = append(finalFilteredElements, el)
 		}
 	}
-	log.Printf("Filter akhir: %d elemen akan dikembalikan.", len(finalFilteredElements))
-
-	cacheMutex.Lock()
-	processedElementsCache = finalFilteredElements
-	cacheMutex.Unlock()
-
-	log.Println("Semua proses data dalam scraper selesai. Data disimpan di cache internal.")
+	log.Println("all data processing in scraper complete. data will be returned directly.")
 	return finalFilteredElements, nil
 }
 
 func GetProcessedElements() []*Element {
-	cacheMutex.RLock()
-	defer cacheMutex.RUnlock()
-
-	if processedElementsCache == nil {
-		log.Println("Peringatan: GetProcessedElements dipanggil sebelum cache diisi. Kembalikan slice kosong.")
+	log.Println("GetProcessedElements called: will perform a new fetch and process data.")
+	elements, err := FetchAndProcessData()
+	if err != nil {
+		log.Printf("error during FetchAndProcessData called from GetProcessedElements: %v. returning empty slice.", err)
 		return []*Element{}
 	}
-
-	elementsCopy := make([]*Element, len(processedElementsCache))
-	for i, el := range processedElementsCache {
-
-		tempEl := *el
-
-		tempEl.FromPair = make([][]int, len(el.FromPair))
-		idx := 0
-		for j, pair := range el.FromPair {
-			if isElementValid(processedElementsCache, el.ID, pair[0], pair[1]) { 
-				tempEl.FromPair[j] = make([]int, len(pair))
-				copy(tempEl.FromPair[j], pair)
-				idx++
-			}
-		}
-
-		tempEl.CanMake = make([]int, len(el.CanMake))
-		copy(tempEl.CanMake, el.CanMake)
-
-		elementsCopy[i] = &tempEl
-	}
-	return elementsCopy
-}
-
-
-func isElementValid(el []*Element, idParent int, idChild1 int, idChild2 int) bool{
-	if el[idParent].Tier <= el[idChild1].Tier || el[idParent].Tier <= el[idChild2].Tier {
-		return false
-	}
-	if el[idChild1].Name == "Time" || el[idChild2].Name == "Time" {
-		return false
-	}
-	if el[idChild1].Name == "Ruins" || el[idChild2].Name == "Ruins" {
-		return false
-	}
-	if el[idChild1].Name == "Archeologist" || el[idChild2].Name == "Archeologist" {
-		return false
-	}
-	return true
+	return elements
 }
