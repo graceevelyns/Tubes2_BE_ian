@@ -156,10 +156,9 @@ func Dfs(start int, needFound int, mult int) *RecipeTreeNode {
 	return result
 }
 
-func ParallelDFS(targetID, needFound, maxGoroutine int) *RecipeTreeNode {
+func ParallelDFS(targetID, needFound int) *RecipeTreeNode {
 	var wg sync.WaitGroup
 	found := int32(0)
-	sema := make(chan struct{}, maxGoroutine)
 	var mu sync.Mutex // Mutex to protect shared access to results
 
 	var results = RecipeTreeNode{
@@ -171,12 +170,9 @@ func ParallelDFS(targetID, needFound, maxGoroutine int) *RecipeTreeNode {
 	for _, pair := range elements[targetID].FromPair {
 		wg.Add(1)
 
-		// ambil slot di semaphore
-		sema <- struct{}{}
 
 		go func(pair [2]int) {
 			defer wg.Done()
-			defer func() { <-sema }() // kembalikan slot setelah selesai
 			if IsValid(targetID, pair[0], pair[1]) {
 				// log.Printf("[PARALLEL_DFS_DEBUG] Pair (LeftID: %d, RightID: %d) VALID. Melanjutkan goroutine.", pair[0], pair[1])
 				left := Dfs(pair[0], needFound, 1)
