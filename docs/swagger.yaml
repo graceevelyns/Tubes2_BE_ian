@@ -41,20 +41,26 @@ definitions:
   scraper.Element:
     properties:
       CanMake:
+        description: list of element IDs that can be made using this element as an
+          ingredient
         items:
           type: integer
         type: array
       FromPair:
+        description: list of ingredient ID pairs that can create this element
         items:
           items:
             type: integer
           type: array
         type: array
       Id:
+        description: unique identifier for the element
         type: integer
       Name:
+        description: name of the element
         type: string
       Tier:
+        description: tier of the element, 0 for base elements
         type: integer
     type: object
 info:
@@ -62,21 +68,19 @@ info:
 paths:
   /graph-data:
     get:
-      description: Mengembalikan seluruh data elemen dan resep yang valid dalam format
-        ID terstruktur, terurut berdasarkan penemuan saat scraping. Termasuk info
-        Tier, FromPair, dan CanMake. Hanya elemen dasar atau yang punya resep valid
-        dan tier terhitung yang disertakan.
+      description: For testing purposes, this endpoint returns all processed graph
+        data in JSON format
       produces:
       - application/json
       responses:
         "200":
-          description: "Array data elemen dalam format ID dengan Tier\"\t//\tTipe\tdi\tswagger\tdiupdate"
+          description: Array element data in JSON format
           schema:
             items:
               $ref: '#/definitions/scraper.Element'
             type: array
         "500":
-          description: Error jika data graf belum siap atau tidak valid
+          description: Error if graph data is not ready or invalid
           schema:
             type: string
       summary: Get All Processed Graph Data

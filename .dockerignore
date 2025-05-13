@@ -1,0 +1,23 @@
+# git
+.git
+.gitignore
+
+# docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+vendor/
+
+.DS_Store
+Thumbs.db
+*~
+*.swp
+
+# local compilation (if any)
+alchemy-backend
+alchemy-backend.exe
+bin/
+
+*.md
+README.md
