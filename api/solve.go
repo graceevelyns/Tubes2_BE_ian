@@ -1,62 +1,18 @@
 package handler
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
-	"strings"
-	"sync"
-
-	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/pkg/algorithm"
-	originalApi "github.com/graceevelyns/Tubes2_BE_ian/src/cmd/pkg/api"
-	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/pkg/scraper"
 )
-
-var (
-	solveHandlerInstance *originalApi.SolveHandler
-	initOnce             sync.Once
-
-	processedGraphData []*scraper.Element
-	elementNameToID    map[string]int
-	elementIDToName    map[int]string
-)
-
-func initializeDependencies() {
-	log.Println("Vercel Handler: Initializing dependencies...")
-	var err error
-
-	processedGraphData, err = scraper.FetchAndProcessData()
-	if err != nil {
-		log.Fatalf("Vercel Handler: Error fetching and processing data: %v", err)
-		return
-	}
-	if processedGraphData == nil || len(processedGraphData) == 0 {
-		log.Fatalf("Vercel Handler: Invalid or empty data from scraper.")
-		return
-	}
-
-	elementNameToID = make(map[string]int)
-	elementIDToName = make(map[int]string)
-	for _, el := range processedGraphData {
-		normalizedName := strings.ToLower(el.Name)
-		elementNameToID[normalizedName] = el.ID
-		elementIDToName[el.ID] = el.Name
-	}
-
-	if scraper.GetProcessedElements() == nil || len(scraper.GetProcessedElements()) == 0 {
-		algorithm.InitializeAlgorithmElements(scraper.GetProcessedElements())
-	}
-
-	solveHandlerInstance = originalApi.NewSolveHandler(elementNameToID, elementIDToName)
-	log.Println("Vercel Handler: Dependencies initialized.")
-}
 
 func Handler(w http.ResponseWriter, r *http.Request) {
-	initOnce.Do(initializeDependencies)
+	log.Println("Minimal handler /api/solve reached!")
 
 	origin := r.Header.Get("Origin")
 	allowedOrigins := []string{
 		"https://tubes2-fe-ian.vercel.app",
-		"http://localhost:3000",       
+		"http://localhost:3000",
 	}
 	for _, o := range allowedOrigins {
 		if origin == o {
@@ -73,11 +29,8 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if solveHandlerInstance == nil {
-		log.Println("Vercel Handler: solveHandlerInstance is nil, initialization might have failed.")
-		http.Error(w, "Service not available due to initialization error", http.StatusInternalServerError)
-		return
-	}
-
-	solveHandlerInstance.ServeHTTP(w, r)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	response := map[string]string{"status": "API /api/solve is alive!"}
+	json.NewEncoder(w).Encode(response)
 }
