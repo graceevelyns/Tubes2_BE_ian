@@ -176,7 +176,7 @@ func (sh *SolveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if recipeCount == 1 {
 			resultTree = algorithm.Dfs(startID, recipeCount, multParam)
 		} else {
-			resultTree = algorithm.ParallelDFS(startID, recipeCount, 2)
+			resultTree = algorithm.ParallelDFS(startID, recipeCount)
 		}
 		// nodesVisitedByAlgo = hasilDariDFS.NodesExplored // contoh
 	} else { // bfs
@@ -184,7 +184,7 @@ func (sh *SolveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if recipeCount == 1 {
 			resultTree = algorithm.Bfs(startID, recipeCount, multParam)
 		} else {
-			resultTree = algorithm.ParallelBfs(startID, recipeCount, 2)
+			resultTree = algorithm.ParallelBfs(startID, recipeCount)
 		}
 		// nodesVisitedByAlgo = hasilDariBFS.NodesExplored // contoh
 	}
