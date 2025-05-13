@@ -87,9 +87,13 @@ Fitur-fitur yang tersedia dalam program ini adalah:
       ```bash
       npm install
       ```
+   3. Buat file `.env` di root directory project lalu tambahkan environment variable berikut:
+      ```bash
+      NEXT_PUBLIC_API_URL=http://localhost:8080
+      ```
    3. Jalankan server frontend:
       ```bash
-      npm run dev
+      npm start
       ```
    4. Buka browser dan akses alamat yang ditampilkan di terminal (`http://localhost:3000`).
 
