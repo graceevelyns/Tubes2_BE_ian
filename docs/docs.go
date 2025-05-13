@@ -17,7 +17,7 @@ const docTemplate = `{
     "paths": {
         "/graph-data": {
             "get": {
-                "description": "Mengembalikan seluruh data elemen dan resep yang valid dalam format ID terstruktur, terurut berdasarkan penemuan saat scraping. Termasuk info Tier, FromPair, dan CanMake. Hanya elemen dasar atau yang punya resep valid dan tier terhitung yang disertakan.",
+                "description": "For testing purposes, this endpoint returns all processed graph data in JSON format",
                 "produces": [
                     "application/json"
                 ],
@@ -27,7 +27,7 @@ const docTemplate = `{
                 "summary": "Get All Processed Graph Data",
                 "responses": {
                     "200": {
-                        "description": "Array data elemen dalam format ID dengan Tier\"\t//\tTipe\tdi\tswagger\tdiupdate",
+                        "description": "Array element data in JSON format",
                         "schema": {
                             "type": "array",
                             "items": {
@@ -36,7 +36,7 @@ const docTemplate = `{
                         }
                     },
                     "500": {
-                        "description": "Error jika data graf belum siap atau tidak valid",
+                        "description": "Error if graph data is not ready or invalid",
                         "schema": {
                             "type": "string"
                         }
@@ -168,12 +168,14 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "CanMake": {
+                    "description": "list of element IDs that can be made using this element as an ingredient",
                     "type": "array",
                     "items": {
                         "type": "integer"
                     }
                 },
                 "FromPair": {
+                    "description": "list of ingredient ID pairs that can create this element",
                     "type": "array",
                     "items": {
                         "type": "array",
@@ -183,12 +185,15 @@ const docTemplate = `{
                     }
                 },
                 "Id": {
+                    "description": "unique identifier for the element",
                     "type": "integer"
                 },
                 "Name": {
+                    "description": "name of the element",
                     "type": "string"
                 },
                 "Tier": {
+                    "description": "tier of the element, 0 for base elements",
                     "type": "integer"
                 }
             }
