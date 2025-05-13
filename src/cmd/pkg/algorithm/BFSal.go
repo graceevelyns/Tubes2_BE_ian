@@ -6,7 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/internal/scraper"
+	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/pkg/scraper"
 )
 
 // Variabel global 'elements' dari file lain di package ini
@@ -284,7 +284,7 @@ func Bfs(start int, needFound int, mult int) *RecipeTreeNode {
 			}
 
 			// 2. Buat RecipeTreeNodeChild
-			var childRelation  = RecipeTreeNodeChild{
+			var childRelation = RecipeTreeNodeChild{
 				Parent:       &Tree,
 				LeftChild:    tempLeftChildNode,
 				RightChild:   tempRightChildNode,
@@ -426,7 +426,7 @@ func Bfs(start int, needFound int, mult int) *RecipeTreeNode {
 						tempGrandLeftNode := &RecipeTreeNode{NamaElemen: elements[grandLeftID_fromPair].Name, DibuatDari: make([]RecipeTreeNodeChild, 0)}
 						tempGrandRightNode := &RecipeTreeNode{NamaElemen: elements[grandRightID_fromPair].Name, DibuatDari: make([]RecipeTreeNodeChild, 0)}
 
-						var newChildRelation  = RecipeTreeNodeChild{
+						var newChildRelation = RecipeTreeNodeChild{
 							Parent:       expandingParentNode,
 							LeftChild:    tempGrandLeftNode,
 							RightChild:   tempGrandRightNode,
@@ -457,7 +457,6 @@ func Bfs(start int, needFound int, mult int) *RecipeTreeNode {
 	// log.Printf("[BFS_DEBUG] === Selesai BFS untuk elemen awal (di INDEKS %d) '%s'. Mengembalikan Tree.BanyakResep: %d. Jumlah DibuatDari: %d ===", start, res.NamaElemen, res.BanyakResep, len(res.DibuatDari))
 	return BFSCleaner(res)
 }
-
 
 func BFSCleaner(tree *RecipeTreeNode) *RecipeTreeNode {
 	if tree == nil || tree.BanyakResep == 0 {
@@ -492,23 +491,6 @@ func BFSCleaner(tree *RecipeTreeNode) *RecipeTreeNode {
 
 	return newTree
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 func ParallelBfs(targetID, needCount int, maxGoroutine int) *RecipeTreeNode {
 	type QueueItem struct {

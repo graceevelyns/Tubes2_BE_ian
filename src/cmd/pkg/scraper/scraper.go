@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/internal/model"
+	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/pkg/model"
 )
 
 const (
@@ -54,7 +54,7 @@ func isStandardBaseElement(name string) bool {
 	return false
 }
 
-func isRecipeValidInternal(ing1ID int, ing2ID int, resultID int, elementMapByID map[int]*Element) bool {
+func isRecipeValidpkg(ing1ID int, ing2ID int, resultID int, elementMapByID map[int]*Element) bool {
 	ing1Elem, ok1 := elementMapByID[ing1ID]
 	ing2Elem, ok2 := elementMapByID[ing2ID]
 	resultElem, okResult := elementMapByID[resultID]
@@ -413,7 +413,7 @@ func populateElementRelationships(orderedElements []*Element, allNodes map[strin
 
 				if !processedIngredientPairKeys[pairKey] {
 					processedIngredientPairKeys[pairKey] = true
-					if isRecipeValidInternal(ing1ID, ing2ID, currentElement.ID, elementMapByID) {
+					if isRecipeValidpkg(ing1ID, ing2ID, currentElement.ID, elementMapByID) {
 						tempValidFromPairs = append(tempValidFromPairs, currentPairIDs)
 
 						if _, exists := canMakeTemp[ing1ID]; !exists {
@@ -466,7 +466,6 @@ func FetchAndProcessData() ([]*Element, error) {
 	for _, el := range orderedElements {
 		isBase := isStandardBaseElement(el.Name)
 		hasValidRecipes := len(el.FromPair) > 0
-
 
 		if isBase {
 			finalFilteredElements = append(finalFilteredElements, el)

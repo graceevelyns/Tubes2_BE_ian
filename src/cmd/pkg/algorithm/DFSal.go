@@ -5,7 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/internal/scraper"
+	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/pkg/scraper"
 )
 
 var elements []*scraper.Element
@@ -181,7 +181,7 @@ func ParallelDFS(targetID, needFound, maxGoroutine int) *RecipeTreeNode {
 				// log.Printf("[PARALLEL_DFS_DEBUG] Pair (LeftID: %d, RightID: %d) VALID. Melanjutkan goroutine.", pair[0], pair[1])
 				left := Dfs(pair[0], needFound, 1)
 				right := Dfs(pair[1], needFound, 1)
-	
+
 				if left != nil && right != nil && left.BanyakResep > 0 && right.BanyakResep > 0 {
 					childNode := RecipeTreeNodeChild{
 						Parent:       &results,

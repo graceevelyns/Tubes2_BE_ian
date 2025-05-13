@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/internal/algorithm"
-	// "github.com/graceevelyns/Tubes2_BE_ian/src/internal/scraper"
+	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/pkg/algorithm"
+	// "github.com/graceevelyns/Tubes2_BE_ian/src/pkg/scraper"
 	_ "github.com/graceevelyns/Tubes2_BE_ian/src/cmd/docs"
 )
 

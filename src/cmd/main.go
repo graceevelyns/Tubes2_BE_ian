@@ -10,9 +10,9 @@ import (
 	httpSwagger "github.com/swaggo/http-swagger/v2"
 
 	_ "github.com/graceevelyns/Tubes2_BE_ian/src/cmd/docs"
-	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/internal/algorithm"
-	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/internal/api"
-	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/internal/scraper"
+	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/pkg/algorithm"
+	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/pkg/api"
+	"github.com/graceevelyns/Tubes2_BE_ian/src/cmd/pkg/scraper"
 )
 
 var (
@@ -58,7 +58,7 @@ func main() {
 	//	@Failure		500	{string}	string			"Error if graph data is not ready or invalid"
 	//	@Router			/graph-data [get]
 	r := mux.NewRouter()
-	
+
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Allow specific origins in production
@@ -67,23 +67,23 @@ func main() {
 				"https://tubes2-fe-ian.vercel.app",
 				"http://localhost:3000", // for local development
 			}
-			
+
 			for _, o := range allowedOrigins {
 				if origin == o {
 					w.Header().Set("Access-Control-Allow-Origin", origin)
 					break
 				}
 			}
-			
+
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
-			
+
 			if r.Method == "OPTIONS" {
 				w.WriteHeader(http.StatusOK)
 				return
 			}
-			
+
 			next.ServeHTTP(w, r)
 		})
 	})
